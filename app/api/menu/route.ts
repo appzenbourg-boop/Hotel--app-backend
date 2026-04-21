@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/menu — same menu_items table admin manages in /admin/content/menu
 export async function GET(request: Request) {
   try {
