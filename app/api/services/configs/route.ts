@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/services/configs?propertyId=xxx
 // Housekeeping screen calls this to get dynamic service options
 // Admin manages these in /admin/services (service configs)
