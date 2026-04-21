@@ -1,0 +1,34 @@
+﻿Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+node.exe : Error: 
+At line:1 char:1
++ & "C:\Program 
+Files\nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo        
+      : NotSpecified: (E  
+  rror: :String) [], Re   
+ moteException
+    + FullyQualifiedError 
+   Id : NativeCommandErr  
+  or
+ 
+EPERM: operation not 
+permitted, rename 'C:\User
+s\haris\OneDrive\Desktop\h
+otelbackend\zenburg-guest-
+web\zenburg-guest-web\node
+_modules\.prisma\client\qu
+ery_engine-windows.dll.nod
+e.tmp18200' -> 'C:\Users\h
+aris\OneDrive\Desktop\hote
+lbackend\zenburg-guest-web
+\zenburg-guest-web\node_mo
+dules\.prisma\client\query
+_engine-windows.dll.node'
+
+

@@ -1,0 +1,36 @@
+﻿Room keys: [
+  'id',           'amenities',
+  'basePrice',    'category',
+  'createdAt',    'description',
+  'floor',        'images',
+  'maxOccupancy', 'propertyId',
+  'roomNumber',   'status',
+  'type',         'updatedAt'
+]
+Sample room: {
+  "id": "698f40f2c1d818598d5213bd",
+  "amenities": [
+    "WiFi",
+    "Smart TV",
+    "AC",
+    "Mini Bar",
+    "Balcony",
+    "Coffee Maker",
+    "Jacuzzi",
+    "Living Room"
+  ],
+  "basePrice": 8500,
+  "category": "SUITE",
+  "createdAt": "2026-02-13T15:19:14.495Z",
+  "description": "Luxurious suite with separate living area",
+  "floor": "3",
+  "images": [
+    "https://images.unsplash.com/photo-1578683010236-d716f9a3f461"
+  ],
+  "maxOccupancy": "4",
+  "propertyId": "698f40f2c1d818598d5213bc",
+  "roomNumber": "301",
+  "status": "OCCUPIED",
+  "type": "Executive Suite",
+  "updatedAt": "2026-03-29T10:00:04.883Z"
+}

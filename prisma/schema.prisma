@@ -1,0 +1,1081 @@
+// Zenbourg Hotel Management System - Database Schema
+// Shared schema with admin panel - same MongoDB database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// USERS & AUTHENTICATION
+// ========================================
+
+model User {
+  id       String     @id @default(auto()) @map("_id") @db.ObjectId
+  name     String
+  email    String     @unique
+  phone    String     @unique
+  password String
+  role     UserRole   @default(GUEST)
+  status   UserStatus @default(ACTIVE)
+
+  workplaceId      String?  @db.ObjectId
+  ownedPropertyIds String[] @db.ObjectId
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  ownedProperties Property[] @relation("OwnershipRelation", fields: [ownedPropertyIds], references: [id])
+  workplace       Property?  @relation("WorkerRelation", fields: [workplaceId], references: [id])
+  staff           Staff?
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  HOTEL_ADMIN
+  MANAGER
+  RECEPTIONIST
+  STAFF
+  GUEST
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+}
+
+// ========================================
+// GUESTS
+// ========================================
+
+model Guest {
+  id    String @id @default(auto()) @map("_id") @db.ObjectId
+  name  String
+  phone String @unique
+  email String?
+
+  address     String?
+  dateOfBirth DateTime?
+
+  idType         String?
+  idNumber       String?
+  idDocumentFront String?
+  idDocumentBack  String?
+
+  checkInStatus      CheckInStatus @default(PENDING)
+  checkInCompletedAt DateTime?
+
+  language String?
+
+  // Referral fields
+  referralCode String?
+  referredBy   String?
+
+  // Property that created/owns this guest
+  createdByPropertyId String? @db.ObjectId
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bookings        Booking[]
+  serviceRequests ServiceRequest[]
+  favorites       Favorite[]
+  supportTickets  SupportTicket[]
+  ratings         Rating[]
+  lostItems       LostItem[]
+
+  @@map("guests")
+}
+
+model Favorite {
+  id      String @id @default(auto()) @map("_id") @db.ObjectId
+  guestId String @db.ObjectId
+  guest   Guest  @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  roomId String @db.ObjectId
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([guestId, roomId])
+  @@map("favorites")
+}
+
+enum CheckInStatus {
+  PENDING
+  LINK_SENT
+  LINK_OPENED
+  COMPLETED
+  VERIFIED
+}
+
+// ========================================
+// PROPERTIES & ROOMS
+// ========================================
+
+model Property {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  address     String
+  phone       String
+  email       String
+  logo        String?
+  coverImage  String?
+  images      String[]
+
+  checkInTime  String @default("14:00")
+  checkOutTime String @default("11:00")
+
+  cancellationPolicy String?
+  plan               SubscriptionPlan @default(BASE)
+  features           String[]         @default(["BASIC_OPS", "STAFF_MANAGEMENT"])
+  planExpiresAt      DateTime?
+
+  latitude  Float?
+  longitude Float?
+  ranking   Int    @default(0)
+  policies  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ownerIds String[] @db.ObjectId
+  owners   User[]   @relation("OwnershipRelation", fields: [ownerIds], references: [id])
+
+  workerList      User[]           @relation("WorkerRelation")
+  rooms           Room[]           @relation("PropertyToRoom")
+  amenities       Amenity[]        @relation("PropertyToAmenity")
+  menuItems       MenuItem[]       @relation("PropertyToMenuItem")
+  spaServices     SpaService[]     @relation("PropertyToSpaService")
+  staff           Staff[]          @relation("PropertyToStaff")
+  bookings        Booking[]        @relation("PropertyToBooking")
+  serviceRequests ServiceRequest[] @relation("PropertyToServiceRequest")
+  rolePermissions RolePermission[] @relation("PropertyToRolePermission")
+  serviceConfigs  ServiceConfig[]  @relation("PropertyToServiceConfig")
+  campaigns       Campaign[]       @relation("PropertyToCampaign")
+  systemNodes     SystemNode[]     @relation("PropertyToSystemNode")
+  systemAlerts    SystemAlert[]    @relation("PropertyToSystemAlert")
+  supportTickets  SupportTicket[]  @relation("PropertyToSupportTicket")
+  lostItems       LostItem[]       @relation("PropertyToLostItem")
+
+  @@map("properties")
+}
+
+model Room {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  propertyId String   @db.ObjectId
+  property   Property @relation("PropertyToRoom", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  roomNumber String
+  floor      Int
+  category   RoomCategory
+  type       String
+
+  maxOccupancy     Int
+  basePrice        Float
+  weekendSurcharge Float @default(0)
+
+  visibleOnline  Boolean @default(true)
+  petFriendly    Boolean @default(false)
+  smokingAllowed Boolean @default(false)
+  adaCompliant   Boolean @default(false)
+
+  amenities   String[]
+  images      String[]
+  description String?
+
+  status RoomStatus @default(AVAILABLE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings        Booking[]
+  serviceRequests ServiceRequest[]
+  favorites       Favorite[]
+  lostItems       LostItem[]
+
+  @@unique([propertyId, roomNumber])
+  @@index([propertyId])
+  @@index([status])
+  @@map("rooms")
+}
+
+enum RoomCategory {
+  STANDARD
+  DELUXE
+  SUITE
+  PENTHOUSE
+  CUSTOM
+}
+
+enum RoomStatus {
+  AVAILABLE
+  OCCUPIED
+  MAINTENANCE
+  BLOCKED
+  CLEANING
+}
+
+// ========================================
+// BOOKINGS
+// ========================================
+
+model Booking {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  guestId String @db.ObjectId
+  guest   Guest  @relation(fields: [guestId], references: [id])
+
+  roomId String @db.ObjectId
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  checkIn  DateTime
+  checkOut DateTime
+
+  actualCheckIn  DateTime?
+  actualCheckOut DateTime?
+
+  numberOfGuests Int
+
+  status BookingStatus @default(RESERVED)
+  source BookingSource @default(DIRECT)
+
+  totalAmount   Float
+  paidAmount    Float         @default(0)
+  paymentStatus PaymentStatus @default(PENDING)
+
+  baseAmount           Float?
+  gstPercent           Float?
+  gstAmount            Float?
+  serviceChargePercent Float?
+  serviceChargeAmount  Float?
+  luxuryTaxPercent     Float?
+  luxuryTaxAmount      Float?
+  discountPercent      Float?
+  discountAmount       Float?
+  finalAmount          Float?
+
+  specialRequests String?
+  notes           String?
+
+  propertyId String?   @db.ObjectId
+  property   Property? @relation("PropertyToBooking", fields: [propertyId], references: [id])
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  lostItems LostItem[]
+
+  @@index([propertyId])
+  @@index([status])
+  @@index([checkIn, checkOut])
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  RESERVED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  NO_SHOW
+}
+
+enum BookingSource {
+  WALK_IN
+  DIRECT
+  BOOKING_COM
+  MAKE_MY_TRIP
+  AGODA
+  EXPEDIA
+  AIRBNB
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  REFUNDED
+}
+
+// ========================================
+// SERVICES & ORDERS
+// ========================================
+
+model ServiceRequest {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  type ServiceType
+
+  guestId String? @db.ObjectId
+  guest   Guest?  @relation(fields: [guestId], references: [id])
+
+  roomId String? @db.ObjectId
+  room   Room?   @relation(fields: [roomId], references: [id])
+
+  propertyId String   @db.ObjectId
+  property   Property @relation("PropertyToServiceRequest", fields: [propertyId], references: [id])
+
+  title       String
+  description String?
+  priority    Priority @default(NORMAL)
+
+  assignedToId String? @db.ObjectId
+  assignedTo   Staff?  @relation(fields: [assignedToId], references: [id])
+
+  status ServiceStatus @default(PENDING)
+
+  slaMinutes  Int       @default(60)
+  createdAt   DateTime  @default(now())
+  acceptedAt  DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  amount        Float?
+  paymentStatus PaymentStatus?
+
+  attachments String[]
+  notes       String?
+
+  updatedAt DateTime @updatedAt
+
+  ratings  Rating[]
+  messages Message[] @relation("ServiceMessages")
+
+  @@index([propertyId])
+  @@index([status])
+  @@index([type])
+  @@index([assignedToId])
+  @@map("service_requests")
+}
+
+enum ServiceType {
+  HOUSEKEEPING
+  FOOD_ORDER
+  ROOM_SERVICE
+  LAUNDRY
+  MAINTENANCE
+  CONCIERGE
+  SPA
+}
+
+enum ServiceStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// ========================================
+// STAFF & HR
+// ========================================
+
+model Staff {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  userId String @unique @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  propertyId String   @db.ObjectId
+  property   Property @relation("PropertyToStaff", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  employeeId    String    @unique
+  dateOfBirth   DateTime?
+  dateOfJoining DateTime  @default(now())
+
+  department   Department
+  designation  String
+  contractType String?    @default("Full-Time Permanent")
+  workShift    String?    @default("Morning (06:00 - 14:00)")
+  managerName  String?    @default("Michael Scott")
+
+  baseSalary    Float
+  bankName      String?
+  accountNumber String?
+  ifscCode      String?
+
+  emergencyContactName  String?
+  emergencyContactPhone String?
+
+  address      String?
+  profilePhoto String?
+  documents    Json?
+
+  annualLeaveBalance Int @default(15)
+  sickLeaveBalance   Int @default(10)
+  casualLeaveBalance Int @default(7)
+
+  isVerified            Boolean @default(false)
+  verificationRequested Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attendances       Attendance[]
+  leaveRequests     LeaveRequest[]
+  serviceRequests   ServiceRequest[]
+  payrolls          Payroll[]
+  performanceScores PerformanceScore[]
+  lostItems         LostItem[]
+
+  @@index([propertyId])
+  @@index([department])
+  @@map("staff")
+}
+
+enum Department {
+  FRONT_DESK
+  HOUSEKEEPING
+  KITCHEN
+  ROOM_SERVICE
+  MAINTENANCE
+  SECURITY
+  ACCOUNTS
+  MANAGEMENT
+}
+
+model Attendance {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  staffId String @db.ObjectId
+  staff   Staff  @relation(fields: [staffId], references: [id])
+
+  date DateTime
+
+  punchIn  DateTime?
+  punchOut DateTime?
+
+  punchInLocation  String?
+  punchOutLocation String?
+
+  status AttendanceStatus @default(ABSENT)
+
+  hoursWorked   Float?
+  overtimeHours Float  @default(0)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([staffId, date])
+  @@index([date])
+  @@map("attendances")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  ON_LEAVE
+}
+
+model LeaveRequest {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  staffId String @db.ObjectId
+  staff   Staff  @relation(fields: [staffId], references: [id])
+
+  leaveType LeaveType
+  startDate DateTime
+  endDate   DateTime
+  totalDays Int
+
+  reason String
+
+  status LeaveStatus @default(PENDING)
+
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  evidence        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("leave_requests")
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  EARNED
+  UNPAID
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model Payroll {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  staffId String @db.ObjectId
+  staff   Staff  @relation(fields: [staffId], references: [id])
+
+  month String
+  year  Int
+
+  baseSalary  Float
+  overtimePay Float @default(0)
+  incentives  Float @default(0)
+  bonuses     Float @default(0)
+  deductions  Float @default(0)
+  netSalary   Float
+
+  status    PayrollStatus @default(PENDING)
+  paidAt    DateTime?
+  paymentId String?
+
+  breakdown Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([staffId, month, year])
+  @@map("payrolls")
+}
+
+enum PayrollStatus {
+  PENDING
+  APPROVED
+  PAID
+}
+
+model Rating {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  guestId String @db.ObjectId
+  guest   Guest  @relation(fields: [guestId], references: [id])
+
+  serviceRequestId String?         @db.ObjectId
+  serviceRequest   ServiceRequest? @relation(fields: [serviceRequestId], references: [id])
+
+  type RatingType
+
+  rating  Int
+  comment String?
+
+  createdAt DateTime @default(now())
+
+  @@map("ratings")
+}
+
+enum RatingType {
+  SERVICE
+  OVERALL_STAY
+  CLEANLINESS
+  FOOD
+  STAFF
+}
+
+model PerformanceScore {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  staffId String @db.ObjectId
+  staff   Staff  @relation(fields: [staffId], references: [id])
+
+  month String
+  year  Int
+
+  tasksCompleted Int    @default(0)
+  tasksOnTime    Int    @default(0)
+  avgRating      Float?
+  slaBreaches    Int    @default(0)
+
+  overallScore Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([staffId, month, year])
+  @@map("performance_scores")
+}
+
+// ========================================
+// HOTEL CONTENT
+// ========================================
+
+model Amenity {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  propertyId String   @db.ObjectId
+  property   Property @relation("PropertyToAmenity", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  icon        String?
+  category    String?
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("amenities")
+}
+
+model MenuItem {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  propertyId String   @db.ObjectId
+  property   Property @relation("PropertyToMenuItem", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  category    String
+  cuisine     String?
+
+  price  Float
+  margin Float    @default(0)
+  images String[]
+
+  isVeg       Boolean @default(true)
+  isAvailable Boolean @default(true)
+
+  prepTime Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("menu_items")
+}
+
+model SpaService {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  propertyId String   @db.ObjectId
+  property   Property @relation("PropertyToSpaService", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  duration    Int
+  price       Float
+  image       String?
+
+  isAvailable Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("spa_services")
+}
+
+model LostItem {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  propertyId String   @db.ObjectId
+  property   Property @relation("PropertyToLostItem", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  category    String
+  status      String  @default("FOUND")
+
+  foundDate DateTime @default(now())
+  location  String?
+
+  roomId String? @db.ObjectId
+  room   Room?   @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  reportedById String? @db.ObjectId
+  reportedBy   Staff?  @relation(fields: [reportedById], references: [id], onDelete: SetNull)
+
+  guestId   String?  @db.ObjectId
+  guest     Guest?   @relation(fields: [guestId], references: [id], onDelete: SetNull)
+  bookingId String?  @db.ObjectId
+  booking   Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  image          String?
+  evidenceImages String[]
+  caseNotes      Json?
+
+  claimerName  String?
+  claimerPhone String?
+  claimedAt    DateTime?
+  claimNotes   String?
+
+  whatsappSent      Boolean   @default(false)
+  whatsappSentAt    DateTime?
+  whatsappStatus    String?
+  whatsappMessageId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("lost_items")
+}
+
+// ========================================
+// SYSTEM CONFIGURATION
+// ========================================
+
+model RolePermission {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  propertyId String   @db.ObjectId
+  property   Property @relation("PropertyToRolePermission", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  role        UserRole
+  permissions Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([propertyId, role])
+  @@map("role_permissions")
+}
+
+model SystemSetting {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  key         String  @unique
+  value       String
+  description String?
+
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model NotificationTemplate {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  name    String              @unique
+  type    NotificationType
+  channel NotificationChannel
+
+  subject  String?
+  template String
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_templates")
+}
+
+model ServiceConfig {
+  id         String        @id @default(auto()) @map("_id") @db.ObjectId
+  propertyId String        @db.ObjectId
+  property   Property      @relation("PropertyToServiceConfig", fields: [propertyId], references: [id], onDelete: Cascade)
+  type       ServiceType
+  steps      ServiceStep[]
+  totalSla   Int
+  options    Json?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@unique([propertyId, type])
+  @@map("service_configs")
+}
+
+model ServiceStep {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  serviceConfigId String        @db.ObjectId
+  serviceConfig   ServiceConfig @relation(fields: [serviceConfigId], references: [id], onDelete: Cascade)
+  name            String
+  duration        Int
+  order           Int
+
+  @@map("service_steps")
+}
+
+enum NotificationType {
+  CHECK_IN_LINK
+  BOOKING_CONFIRMATION
+  CHECK_IN_REMINDER
+  CHECK_OUT_REMINDER
+  SERVICE_REQUEST_UPDATE
+  PAYMENT_RECEIPT
+  STAFF_TASK_ASSIGNED
+  LEAVE_APPROVED
+  SALARY_CREDITED
+}
+
+enum NotificationChannel {
+  SMS
+  EMAIL
+  WHATSAPP
+  PUSH
+  IN_APP
+}
+
+model Campaign {
+  id          String              @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  startedAt   DateTime            @default(now())
+  segment     String
+  performance Int                 @default(0)
+  status      CampaignStatus      @default(ACTIVE)
+  channel     NotificationChannel
+  promoCode   String?
+  propertyId  String              @db.ObjectId
+  property    Property            @relation("PropertyToCampaign", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("campaigns")
+}
+
+enum CampaignStatus {
+  ACTIVE
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model SystemNode {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  name       String
+  type       String
+  ipAddress  String
+  uptime     String
+  status     String
+  propertyId String   @db.ObjectId
+  property   Property @relation("PropertyToSystemNode", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_nodes")
+}
+
+model SystemAlert {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  message     String
+  description String?
+  type        String
+  timestamp   DateTime @default(now())
+  category    String
+  propertyId  String   @db.ObjectId
+  property    Property @relation("PropertyToSystemAlert", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("system_alerts")
+}
+
+model InAppNotification {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  title       String
+  description String
+  type        String   @default("INFO")
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@map("in_app_notifications")
+}
+
+model Message {
+  id         String  @id @default(auto()) @map("_id") @db.ObjectId
+  senderId   String  @db.ObjectId
+  receiverId String? @db.ObjectId
+
+  serviceRequestId String?         @db.ObjectId
+  serviceRequest   ServiceRequest? @relation("ServiceMessages", fields: [serviceRequestId], references: [id])
+
+  content   String
+  isRead    Boolean  @default(false)
+  type      String   @default("TEXT")
+  category  String   @default("CHAT")
+  createdAt DateTime @default(now())
+
+  @@index([receiverId, isRead])
+  @@map("messages")
+}
+
+enum SubscriptionPlan {
+  BASE
+  STARTER
+  STANDARD
+  ENTERPRISE
+  GOLD
+  PLATINUM
+  DIAMOND
+}
+
+// ========================================
+// SUPPORT TICKETS
+// ========================================
+
+model SupportTicket {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  guestId String @db.ObjectId
+  guest   Guest  @relation(fields: [guestId], references: [id])
+
+  propertyId String?   @db.ObjectId
+  property   Property? @relation("PropertyToSupportTicket", fields: [propertyId], references: [id])
+
+  type     TicketType
+  subject  String
+  message  String
+  status   TicketStatus   @default(OPEN)
+  priority TicketPriority @default(NORMAL)
+
+  messages TicketMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id       String        @id @default(auto()) @map("_id") @db.ObjectId
+  ticketId String        @db.ObjectId
+  ticket   SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  senderId   String @db.ObjectId
+  senderRole String
+
+  content   String
+  createdAt DateTime @default(now())
+
+  @@map("ticket_messages")
+}
+
+model PlanDefinition {
+  id   String           @id @default(auto()) @map("_id") @db.ObjectId
+  plan SubscriptionPlan @unique
+
+  displayName     String?
+  tagline         String?
+  description     String?
+  originalPrice   Float   @default(0)
+  discountedPrice Float   @default(0)
+  discountPercent Float   @default(0)
+  billingCycle    String  @default("monthly")
+
+  maxRooms Int @default(30)
+  maxStaff Int @default(10)
+
+  features String[]
+
+  updatedAt DateTime @updatedAt
+
+  @@map("plan_definitions")
+}
+
+model PropertySettings {
+  id         String @id @default(auto()) @map("_id") @db.ObjectId
+  propertyId String @unique @db.ObjectId
+
+  gstPercent           Float  @default(18.0)
+  serviceChargePercent Float  @default(0.0)
+  luxuryTaxPercent     Float  @default(0.0)
+  defaultDiscountPercent Float @default(0.0)
+  discountLabel        String? @default("Discount")
+
+  invoicePrefix String  @default("INV")
+  invoiceFooter String?
+
+  currency       String @default("INR")
+  currencySymbol String @default("₹")
+
+  checkInTime  String @default("14:00")
+  checkOutTime String @default("11:00")
+
+  bankAccountName   String?
+  bankAccountNumber String?
+  bankIfscCode      String?
+  bankName          String?
+  bankBranch        String?
+  upiId             String?
+
+  razorpayKeyId     String?
+  razorpayKeySecret String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("property_settings")
+}
+
+enum TicketType {
+  TECHNICAL
+  BOOKING
+  PAYMENT
+  OTHER
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+// ========================================
+// WALLET & REFERRAL (Guest App Only)
+// ========================================
+
+model Wallet {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  guestId   String   @unique @db.ObjectId
+  balance   Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  walletId    String   @db.ObjectId
+  wallet      Wallet   @relation(fields: [walletId], references: [id])
+  type        String   // CREDIT or DEBIT
+  amount      Float
+  description String?
+  reference   String?
+  createdAt   DateTime @default(now())
+
+  @@index([walletId])
+  @@index([createdAt])
+  @@map("wallet_transactions")
+}
+
+model Referral {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  referrerId String    @db.ObjectId
+  referredId String?   @db.ObjectId
+  code       String    @unique
+  status     String    @default("PENDING")
+  rewardAmount   Float @default(100)
+  rewardCredited Boolean @default(false)
+  createdAt  DateTime  @default(now())
+  completedAt DateTime? @db.Date
+
+  @@index([referrerId])
+  @@map("referrals")
+}
