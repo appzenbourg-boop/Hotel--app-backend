@@ -14,13 +14,11 @@ function getUserIdFromRequest(request: Request) {
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: bookingId } = await context.params;
     const userId = getUserIdFromRequest(request);
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const bookingId = params.id;
 
     // Fetch booking with all related costs
     const booking = await prisma.booking.findUnique({
