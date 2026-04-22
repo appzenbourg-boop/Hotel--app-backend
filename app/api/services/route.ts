@@ -104,7 +104,6 @@ export async function POST(request: Request) {
     const availableStaff = await prisma.staff.findFirst({
       where: {
         propertyId,
-        status: 'ACTIVE', // Only assign to online staff
       },
       select: { id: true }
     });
