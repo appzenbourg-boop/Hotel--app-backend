@@ -118,7 +118,7 @@ export async function POST(request: Request) {
         description: description || null,
         priority: priority || 'NORMAL',
         amount: (type === 'FOOD_ORDER' || type === 'SPA') ? (amount || null) : null,
-        status: availableStaff ? 'ASSIGNED' : 'PENDING',
+        status: availableStaff ? 'ACCEPTED' : 'PENDING',
         assignedToId: availableStaff?.id || null,
         slaMinutes,
       },
