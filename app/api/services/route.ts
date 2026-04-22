@@ -99,6 +99,16 @@ export async function POST(request: Request) {
       if (config) slaMinutes = config.totalSla;
     } catch { /* service config may not exist */ }
 
+    // NEW: Automatic Staff Assignment
+    // Find the first available staff member at this property
+    const availableStaff = await prisma.staff.findFirst({
+      where: {
+        propertyId,
+        status: 'ACTIVE', // Only assign to online staff
+      },
+      select: { id: true }
+    });
+
     const serviceRequest = await prisma.serviceRequest.create({
       data: {
         guestId: guest.id,
@@ -108,12 +118,32 @@ export async function POST(request: Request) {
         title,
         description: description || null,
         priority: priority || 'NORMAL',
-        // Only set amount for food orders and spa
         amount: (type === 'FOOD_ORDER' || type === 'SPA') ? (amount || null) : null,
-        status: 'PENDING',
+        status: availableStaff ? 'ASSIGNED' : 'PENDING',
+        assignedToId: availableStaff?.id || null,
         slaMinutes,
       },
+      include: {
+        assignedTo: {
+          select: {
+            id: true,
+            user: { select: { name: true } }
+          }
+        }
+      }
     });
+
+    if (availableStaff) {
+      // Notify staff member via In-App Notification
+      await prisma.inAppNotification.create({
+        data: {
+          userId: (await prisma.staff.findUnique({ where: { id: availableStaff.id }, select: { userId: true } }))?.userId || '',
+          title: 'New Task Assigned',
+          description: `You have been assigned to ${title} for Room ${roomId || 'N/A'}.`,
+          type: 'INFO',
+        }
+      }).catch(() => {});
+    }
 
     return NextResponse.json({ success: true, request: serviceRequest });
   } catch (error: any) {
