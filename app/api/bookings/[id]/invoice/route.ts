@@ -67,9 +67,12 @@ export async function GET(
       .reduce((sum, s) => sum + (s.amount || 0), 0);
 
     // 4. Tax (Assume 12% on room charge)
-    const tax = Math.round(roomCharge * 0.12);
+    const tax = roomCharge * 0.12;
 
-    const total = roomCharge + culinaryCharge + serviceCharge + tax;
+    // 5. Total Calculations
+    const totalAmount = roomCharge + culinaryCharge + serviceCharge + tax;
+    const paidAmount = (booking as any).paidAmount || 0;
+    const balanceAmount = Math.max(0, totalAmount - paidAmount);
 
     return NextResponse.json({
       success: true,
@@ -84,8 +87,10 @@ export async function GET(
         culinaryCharge,
         serviceCharge,
         tax,
-        total,
-        currency: 'INR'
+        totalStayAmount: totalAmount,
+        paidAlready: paidAmount, // Amount paid during booking
+        balanceAmount: balanceAmount, // Final amount due at checkout
+        currency: 'INR',
       }
     });
   } catch (error: any) {
