@@ -20,21 +20,32 @@ export async function GET(
     const { id: bookingId } = await context.params;
     const userId = getUserIdFromRequest(request);
 
-    // Fetch booking with all related costs
+    // Fetch booking with room and guest info
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
       include: {
         room: true,
         guest: true,
-        serviceRequests: {
-          where: { status: { in: ['COMPLETED', 'ASSIGNED'] } },
-        }
       }
     });
 
     if (!booking) {
       return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
     }
+
+    // Fetch service requests during the stay period
+    // We map to the guest and room since there's no direct bookingId in ServiceRequest
+    const serviceRequests = await prisma.serviceRequest.findMany({
+      where: {
+        guestId: booking.guestId,
+        roomId: booking.roomId,
+        createdAt: {
+          gte: booking.checkIn,
+          lte: booking.checkOut,
+        },
+        status: { in: ['COMPLETED', 'ACCEPTED'] } // Only bill active/done services
+      }
+    });
 
     // Calculate nights
     const start = new Date(booking.checkIn);
@@ -46,13 +57,13 @@ export async function GET(
     const roomCharge = (booking.room.basePrice || 0) * nights;
 
     // 2. Culinary Charges (Food Orders)
-    const culinaryCharge = booking.serviceRequests
-      .filter(s => s.type === 'FOOD_ORDER')
+    const culinaryCharge = serviceRequests
+      .filter(s => s.type === 'FOOD_ORDER' || s.type === 'ROOM_SERVICE')
       .reduce((sum, s) => sum + (s.amount || 0), 0);
 
     // 3. Service Charges (Other paid services)
-    const serviceCharge = booking.serviceRequests
-      .filter(s => s.type !== 'FOOD_ORDER')
+    const serviceCharge = serviceRequests
+      .filter(s => s.type !== 'FOOD_ORDER' && s.type !== 'ROOM_SERVICE')
       .reduce((sum, s) => sum + (s.amount || 0), 0);
 
     // 4. Tax (Assume 12% on room charge)
