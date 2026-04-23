@@ -70,7 +70,16 @@ export async function GET(request: Request) {
     const page = parseInt(searchParams.get('page') || '1');
     const skip = (page - 1) * limit;
 
-    // Use MongoDB $runCommandRaw to bypass Prisma enum validation.
+    const sortField = searchParams.get('sortBy') || 'createdAt';
+    const sortOrder = searchParams.get('order') || 'desc';
+    const sort: any = {};
+    
+    if (sortField === 'price') {
+      sort.totalAmount = sortOrder === 'desc' ? -1 : 1;
+    } else {
+      sort.createdAt = sortOrder === 'desc' ? -1 : 1;
+    }
+
     const filter: any = { guestId: { $oid: guest.id } };
     if (status) {
       if (status.includes(',')) {
@@ -84,7 +93,7 @@ export async function GET(request: Request) {
       (prisma as any).$runCommandRaw({
         find: 'bookings',
         filter,
-        sort: { createdAt: -1 },
+        sort: sort,
         limit: limit,
         skip: skip,
       }),

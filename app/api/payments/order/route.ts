@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     }
 
     const options = {
-      amount: Math.round(amount * 100), // convert to paise
+      amount: Math.round(amount), // Mobile app already sends paise
       currency,
       receipt: `receipt_${Date.now()}`,
       notes,
@@ -44,13 +44,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
         success: true,
-        orderId: order.id,
-        key: process.env.RAZORPAY_KEY_ID,
-        amount: order.amount,
-        currency: order.currency
+        order, // Return full order object as expected by mobile app
+        key: process.env.RAZORPAY_KEY_ID
     });
   } catch (error: any) {
     console.error('Razorpay Error:', error);
-    return NextResponse.json({ error: 'Failed to create payment order' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to create payment order' }, { status: 500 });
   }
 }

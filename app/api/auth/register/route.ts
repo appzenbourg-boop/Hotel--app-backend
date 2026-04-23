@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const { name, phone, password, email, referralCode } = await request.json();
+    const { name, phone, password, email, referralCode, dob, gender } = await request.json();
 
     if (!name || !phone || !password) {
       return NextResponse.json({ error: 'Name, phone and password are required' }, { status: 400 });
@@ -62,6 +62,8 @@ export async function POST(request: Request) {
         name,
         phone,
         email: email || null,
+        dateOfBirth: dob ? new Date(dob) : null,
+        gender: gender || null,
         checkInStatus: 'PENDING',
         referralCode: newUserReferralCode,
         referredBy: referralCode || null,

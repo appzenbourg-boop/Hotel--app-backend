@@ -64,6 +64,7 @@ model Guest {
 
   address     String?
   dateOfBirth DateTime?
+  gender      String?
 
   idType         String?
   idNumber       String?
