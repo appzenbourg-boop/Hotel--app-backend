@@ -41,23 +41,33 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const page = parseInt(searchParams.get('page') || '1');
+    const skip = (page - 1) * limit;
 
     // Use MongoDB $runCommandRaw to bypass Prisma enum validation.
-    // Old bookings in DB have source='MOBILE_APP' which isn't in the enum —
-    // Prisma's findMany throws when it tries to deserialize it.
     const filter: any = { guestId: { $oid: guest.id } };
     if (status) filter.status = status;
 
-    const result = await (prisma as any).$runCommandRaw({
-      find: 'bookings',
-      filter,
-      sort: { createdAt: -1 },
-    });
+    const [result, countResult] = await Promise.all([
+      (prisma as any).$runCommandRaw({
+        find: 'bookings',
+        filter,
+        sort: { createdAt: -1 },
+        limit: limit,
+        skip: skip,
+      }),
+      (prisma as any).$runCommandRaw({
+        count: 'bookings',
+        query: filter,
+      })
+    ]);
 
     const bookingsRaw: any[] = result?.cursor?.firstBatch ?? [];
+    const totalCount = countResult?.n ?? 0;
 
     if (bookingsRaw.length === 0) {
-      return NextResponse.json({ success: true, bookings: [] });
+      return NextResponse.json({ success: true, bookings: [], total: totalCount, page, limit });
     }
 
     // Normalize MongoDB _id/$oid fields to plain strings
@@ -101,7 +111,13 @@ export async function GET(request: Request) {
       room: roomMap.get(b.roomId) || null,
     }));
 
-    return NextResponse.json({ success: true, bookings: safeSerialize(bookings) });
+    return NextResponse.json({ 
+      success: true, 
+      bookings: safeSerialize(bookings),
+      total: totalCount,
+      page,
+      limit
+    });
   } catch (error: any) {
     console.error('Bookings fetch error:', error);
     return NextResponse.json({ error: 'Failed to fetch bookings', detail: error.message }, { status: 500 });
