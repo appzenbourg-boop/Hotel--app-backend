@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     const order = await rzp.orders.fetch(razorpay_order_id);
     
     // Convert paise to rupees (Razorpay stores in paise)
-    const amount = order.amount / 100;
+    const amount = (order.amount as number) / 100;
 
     // Use a transaction to ensure atomic update
     const result = await prisma.$transaction(async (tx) => {
