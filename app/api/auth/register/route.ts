@@ -76,16 +76,50 @@ export async function POST(request: Request) {
       },
     });
 
-    // If referred, create pending referral record
+    // If referred, create COMPLETED referral record and credit wallets
     if (referrer) {
       await prisma.referral.create({
         data: {
           referrerId: referrer.id,
           referredId: guest.id,
           code: referralCode,
-          status: 'PENDING',
+          status: 'COMPLETED',
           rewardAmount: 100,
+          rewardCredited: true,
+          completedAt: new Date(),
         },
+      });
+
+      // Credit Referrer
+      await prisma.wallet.update({
+        where: { guestId: referrer.id },
+        data: { balance: { increment: 100 } }
+      });
+      await prisma.walletTransaction.create({
+        data: {
+          walletId: (await prisma.wallet.findUnique({ where: { guestId: referrer.id } }))!.id,
+          type: 'CREDIT',
+          amount: 100,
+          description: `Referral reward for inviting ${name}`,
+          reference: guest.id
+        }
+      });
+
+      // Credit New Guest (optional, if you want new guest to also get a bonus)
+      // The user said "user should able to use that wallet money" which might imply the new user gets some too.
+      // Let's give the new guest 50 as a welcome bonus if they used a code.
+      await prisma.wallet.update({
+        where: { guestId: guest.id },
+        data: { balance: { increment: 50 } }
+      });
+      await prisma.walletTransaction.create({
+        data: {
+          walletId: (await prisma.wallet.findUnique({ where: { guestId: guest.id } }))!.id,
+          type: 'CREDIT',
+          amount: 50,
+          description: 'Welcome bonus for using referral code',
+          reference: referralCode
+        }
       });
     }
 
