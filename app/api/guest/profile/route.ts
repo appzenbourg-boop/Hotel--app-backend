@@ -12,6 +12,36 @@ function getUserIdFromRequest(request: Request) {
   return decoded ? decoded.id : null;
 }
 
+// Resolve guest — added self-healing to auto-create missing records
+async function resolveGuest(userId: string) {
+  const user = await prisma.user.findUnique({ 
+    where: { id: userId }, 
+    select: { id: true, name: true, phone: true, email: true } 
+  });
+  
+  if (user) {
+    let guest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+    if (!guest) {
+      guest = await prisma.guest.create({
+        data: {
+          name: user.name,
+          phone: user.phone,
+          email: user.email,
+          checkInStatus: 'PENDING',
+          referralCode: `${user.name.slice(0, 3).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
+        }
+      });
+      await prisma.wallet.upsert({
+        where: { guestId: guest.id },
+        update: {},
+        create: { guestId: guest.id, balance: 0 }
+      });
+    }
+    return guest;
+  }
+  return await prisma.guest.findUnique({ where: { id: userId } });
+}
+
 // GET /api/guest/profile
 export async function GET(request: Request) {
   try {
@@ -25,20 +55,7 @@ export async function GET(request: Request) {
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-    // Also get guest profile for extra fields (address, language, etc.)
-    const guest = await prisma.guest.findUnique({
-      where: { phone: user.phone },
-      select: {
-        id: true,
-        address: true,
-        dateOfBirth: true,
-        language: true,
-        idType: true,
-        idNumber: true,
-        checkInStatus: true,
-        referralCode: true,
-      },
-    });
+    const guest = await resolveGuest(userId);
 
     return NextResponse.json({ ...user, ...guest });
   } catch (error: any) {
@@ -66,9 +83,12 @@ export async function PUT(request: Request) {
       select: { id: true, name: true, phone: true, email: true, role: true },
     });
 
+    const guest = await resolveGuest(userId);
+    if (!guest) return NextResponse.json({ error: 'Guest profile not found' }, { status: 404 });
+
     // Update guest profile (admin panel reads this in /admin/guests)
     await prisma.guest.update({
-      where: { phone: updatedUser.phone },
+      where: { id: guest.id },
       data: {
         ...(name && { name }),
         ...(email && { email }),
