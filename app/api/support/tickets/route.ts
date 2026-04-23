@@ -10,10 +10,34 @@ function getUserIdFromRequest(request: Request) {
   return decoded ? decoded.id : null;
 }
 
+// Resolve guest — added self-healing to auto-create missing records
 async function resolveGuest(userId: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
-  if (!user) return null;
-  return prisma.guest.findUnique({ where: { phone: user.phone } });
+  const user = await prisma.user.findUnique({ 
+    where: { id: userId }, 
+    select: { id: true, name: true, phone: true, email: true } 
+  });
+  
+  if (user) {
+    let guest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+    if (!guest) {
+      guest = await prisma.guest.create({
+        data: {
+          name: user.name,
+          phone: user.phone,
+          email: user.email,
+          checkInStatus: 'PENDING',
+          referralCode: `${user.name.slice(0, 3).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
+        }
+      });
+      await prisma.wallet.upsert({
+        where: { guestId: guest.id },
+        update: {},
+        create: { guestId: guest.id, balance: 0 }
+      });
+    }
+    return guest;
+  }
+  return await prisma.guest.findUnique({ where: { id: userId } });
 }
 
 // GET /api/support/tickets — admin sees these in /admin/support
