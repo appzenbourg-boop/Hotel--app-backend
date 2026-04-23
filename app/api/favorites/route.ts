@@ -13,16 +13,39 @@ function getUserIdFromRequest(request: Request) {
 }
 
 // Resolve guest from userId — tries user table first, then falls back to guest table directly
+// Added self-healing: if guest doesn't exist, create one from User data.
 async function resolveGuest(userId: string) {
-  // Try via user → phone → guest (normal flow)
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
+  const user = await prisma.user.findUnique({ 
+    where: { id: userId }, 
+    select: { id: true, name: true, phone: true, email: true } 
+  });
+  
   if (user) {
-    const guest = await prisma.guest.findUnique({ where: { phone: user.phone } });
-    if (guest) return guest;
+    let guest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+    
+    // Self-healing: Create guest if missing
+    if (!guest) {
+      guest = await prisma.guest.create({
+        data: {
+          name: user.name,
+          phone: user.phone,
+          email: user.email,
+          checkInStatus: 'PENDING',
+          referralCode: `${user.name.slice(0, 3).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
+        }
+      });
+      // Also ensure wallet exists
+      await prisma.wallet.upsert({
+        where: { guestId: guest.id },
+        update: {},
+        create: { guestId: guest.id, balance: 0 }
+      });
+    }
+    return guest;
   }
+  
   // Fallback: token might carry guest.id directly (old tokens)
-  const guestDirect = await prisma.guest.findUnique({ where: { id: userId } });
-  return guestDirect;
+  return await prisma.guest.findUnique({ where: { id: userId } });
 }
 
 // GET /api/favorites

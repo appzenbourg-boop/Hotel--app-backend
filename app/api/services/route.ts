@@ -12,6 +12,41 @@ function getUserIdFromRequest(request: Request) {
   return decoded ? decoded.id : null;
 }
 
+// Resolve guest — handles new tokens (user.id) and old tokens (guest.id)
+// Added self-healing: if guest doesn't exist, create one from User data.
+async function resolveGuest(userId: string) {
+  const user = await prisma.user.findUnique({ 
+    where: { id: userId }, 
+    select: { id: true, name: true, phone: true, email: true } 
+  });
+  
+  if (user) {
+    let guest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+    
+    // Self-healing: Create guest if missing
+    if (!guest) {
+      guest = await prisma.guest.create({
+        data: {
+          name: user.name,
+          phone: user.phone,
+          email: user.email,
+          checkInStatus: 'PENDING',
+          referralCode: `${user.name.slice(0, 3).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
+        }
+      });
+      // Also ensure wallet exists
+      await prisma.wallet.upsert({
+        where: { guestId: guest.id },
+        update: {},
+        create: { guestId: guest.id, balance: 0 }
+      });
+    }
+    return guest;
+  }
+  
+  return await prisma.guest.findUnique({ where: { id: userId } });
+}
+
 // GET /api/services — get all service requests for this guest
 // Admin panel reads the same service_requests collection in /admin/services
 export async function GET(request: Request) {
@@ -19,10 +54,7 @@ export async function GET(request: Request) {
     const userId = getUserIdFromRequest(request);
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // Resolve guest profile
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
-    const guest = user ? await prisma.guest.findUnique({ where: { phone: user.phone } }) : null;
-
+    const guest = await resolveGuest(userId);
     if (!guest) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
 
     const requests = await prisma.serviceRequest.findMany({
@@ -60,10 +92,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'type and title are required' }, { status: 400 });
     }
 
-    // Resolve guest profile
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
-    const guest = user ? await prisma.guest.findUnique({ where: { phone: user.phone } }) : null;
-
+    const guest = await resolveGuest(userId);
     if (!guest) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
 
     // Get room to resolve propertyId

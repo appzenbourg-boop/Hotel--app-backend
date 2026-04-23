@@ -13,13 +13,38 @@ function getUserIdFromRequest(request: Request) {
 }
 
 // Resolve guest — handles new tokens (user.id) and old tokens (guest.id)
+// Added self-healing: if guest doesn't exist, create one from User data.
 async function resolveGuest(userId: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
+  const user = await prisma.user.findUnique({ 
+    where: { id: userId }, 
+    select: { id: true, name: true, phone: true, email: true } 
+  });
+  
   if (user) {
-    const guest = await prisma.guest.findUnique({ where: { phone: user.phone } });
-    if (guest) return guest;
+    let guest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+    
+    // Self-healing: Create guest if missing
+    if (!guest) {
+      guest = await prisma.guest.create({
+        data: {
+          name: user.name,
+          phone: user.phone,
+          email: user.email,
+          checkInStatus: 'PENDING',
+          referralCode: `${user.name.slice(0, 3).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
+        }
+      });
+      // Also ensure wallet exists
+      await prisma.wallet.upsert({
+        where: { guestId: guest.id },
+        update: {},
+        create: { guestId: guest.id, balance: 0 }
+      });
+    }
+    return guest;
   }
-  return prisma.guest.findUnique({ where: { id: userId } });
+  
+  return await prisma.guest.findUnique({ where: { id: userId } });
 }
 
 function safeSerialize(data: any): any {
@@ -136,6 +161,7 @@ export async function POST(request: Request) {
     const userId = getUserIdFromRequest(request);
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    const body = await request.json();
     const { roomId, checkIn, checkOut, numberOfGuests, specialRequests, totalAmount, useWallet } = body;
 
     if (!roomId || !checkIn || !checkOut) {
