@@ -14,17 +14,27 @@ function getUserIdFromRequest(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const guestId = getUserIdFromRequest(request);
-    if (!guestId) {
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Find or create wallet — keyed by userId (guestId from token)
-    let wallet = await prisma.wallet.findUnique({ where: { guestId } });
+    // Resolve guest
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
+    let guest = null;
+    if (user) {
+      guest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+    }
+    if (!guest) guest = await prisma.guest.findUnique({ where: { id: userId } });
+    
+    if (!guest) return NextResponse.json({ success: false, error: 'Guest not found' }, { status: 404 });
+
+    // Find or create wallet — keyed by guestId
+    let wallet = await prisma.wallet.findUnique({ where: { guestId: guest.id } });
 
     if (!wallet) {
       wallet = await prisma.wallet.create({
-        data: { guestId, balance: 0 },
+        data: { guestId: guest.id, balance: 0 },
       });
     }
 

@@ -136,8 +136,7 @@ export async function POST(request: Request) {
     const userId = getUserIdFromRequest(request);
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const body = await request.json();
-    const { roomId, checkIn, checkOut, numberOfGuests, specialRequests, totalAmount } = body;
+    const { roomId, checkIn, checkOut, numberOfGuests, specialRequests, totalAmount, useWallet } = body;
 
     if (!roomId || !checkIn || !checkOut) {
       return NextResponse.json({ error: 'roomId, checkIn and checkOut are required' }, { status: 400 });
@@ -177,6 +176,29 @@ export async function POST(request: Request) {
       });
     }
 
+    // Handle wallet deduction
+    let walletDeduction = 0;
+    if (useWallet) {
+      const wallet = await prisma.wallet.findUnique({ where: { guestId: guest.id } });
+      if (wallet && wallet.balance > 0) {
+        walletDeduction = Math.min(wallet.balance, totalAmount);
+        
+        await prisma.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { decrement: walletDeduction } }
+        });
+
+        await prisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            type: 'DEBIT',
+            amount: walletDeduction,
+            description: `Used for booking room ${room.id}`,
+          }
+        });
+      }
+    }
+
     const newBooking = await prisma.booking.create({
       data: {
         guestId: guest.id,
@@ -187,8 +209,8 @@ export async function POST(request: Request) {
         numberOfGuests: numberOfGuests ?? 1,
         specialRequests: specialRequests || null,
         totalAmount: totalAmount || 0,
-        paidAmount: totalAmount || 0,
-        paymentStatus: 'PAID',
+        paidAmount: (totalAmount || 0) - walletDeduction,
+        paymentStatus: walletDeduction >= totalAmount ? 'PAID' : 'PARTIAL',
         status: 'RESERVED',
         source: 'OTHER',
       },
@@ -205,6 +227,58 @@ export async function POST(request: Request) {
       where: { id: roomId },
       data: { status: 'OCCUPIED' },
     });
+
+    // Handle Referral Reward (if this is their first booking)
+    const bookingCount = await prisma.booking.count({ where: { guestId: guest.id } });
+    if (bookingCount === 1 && guest.referredBy) {
+      const referral = await prisma.referral.findFirst({
+        where: { referredId: guest.id, status: 'PENDING' }
+      });
+      
+      if (referral) {
+        // Credit the Referrer
+        const referrerWallet = await prisma.wallet.findUnique({ where: { guestId: referral.referrerId } });
+        if (referrerWallet) {
+          await prisma.wallet.update({
+            where: { id: referrerWallet.id },
+            data: { balance: { increment: referral.rewardAmount } }
+          });
+          
+          await prisma.walletTransaction.create({
+            data: {
+              walletId: referrerWallet.id,
+              type: 'CREDIT',
+              amount: referral.rewardAmount,
+              description: `Referral reward for ${guest.name}`,
+            }
+          });
+        }
+
+        // Credit the Guest (new user)
+        const guestWallet = await prisma.wallet.findUnique({ where: { guestId: guest.id } });
+        if (guestWallet) {
+          await prisma.wallet.update({
+            where: { id: guestWallet.id },
+            data: { balance: { increment: referral.rewardAmount } }
+          });
+          
+          await prisma.walletTransaction.create({
+            data: {
+              walletId: guestWallet.id,
+              type: 'CREDIT',
+              amount: referral.rewardAmount,
+              description: `Welcome bonus for using referral code ${guest.referredBy}`,
+            }
+          });
+        }
+
+        // Complete the referral
+        await prisma.referral.update({
+          where: { id: referral.id },
+          data: { status: 'COMPLETED', rewardCredited: true, completedAt: new Date() }
+        });
+      }
+    }
 
     return NextResponse.json({ success: true, booking: safeSerialize(newBooking) });
   } catch (error: any) {
