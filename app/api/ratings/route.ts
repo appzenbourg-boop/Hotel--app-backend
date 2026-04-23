@@ -18,10 +18,10 @@ export async function POST(request: Request) {
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await request.json();
-    const { serviceRequestId, rating, comment } = body;
+    const { serviceRequestId, rating, comment, type } = body;
 
-    if (!serviceRequestId || !rating) {
-      return NextResponse.json({ error: 'serviceRequestId and rating are required' }, { status: 400 });
+    if (!rating) {
+      return NextResponse.json({ error: 'rating is required' }, { status: 400 });
     }
 
     // Resolve guest profile
@@ -30,29 +30,34 @@ export async function POST(request: Request) {
 
     if (!guest) return NextResponse.json({ error: 'Guest not found' }, { status: 404 });
 
-    // Find the service request to get the staff ID
-    const serviceRequest = await prisma.serviceRequest.findUnique({
-      where: { id: serviceRequestId },
-      select: { assignedToId: true, type: true }
-    });
+    let assignedToId = null;
+    
+    // If serviceRequestId is provided, validate it and get assigned staff
+    if (serviceRequestId) {
+      const serviceRequest = await prisma.serviceRequest.findUnique({
+        where: { id: serviceRequestId },
+        select: { assignedToId: true, type: true }
+      });
 
-    if (!serviceRequest) {
-      return NextResponse.json({ error: 'Service request not found' }, { status: 404 });
+      if (!serviceRequest) {
+        return NextResponse.json({ error: 'Service request not found' }, { status: 404 });
+      }
+      assignedToId = serviceRequest.assignedToId;
     }
 
     // 1. Create the rating entry
     const ratingEntry = await prisma.rating.create({
       data: {
         guestId: guest.id,
-        serviceRequestId,
+        serviceRequestId: serviceRequestId || null,
         rating: parseInt(rating),
         comment: comment || null,
-        type: 'SERVICE',
+        type: type || (serviceRequestId ? 'SERVICE' : 'OVERALL_STAY'),
       },
     });
 
-    // 2. Update Staff Performance Score (Math logic)
-    if (serviceRequest.assignedToId) {
+    // 2. Update Staff Performance Score if applicable
+    if (assignedToId) {
       const now = new Date();
       const month = now.toLocaleString('default', { month: 'long' });
       const year = now.getFullYear();
@@ -61,19 +66,19 @@ export async function POST(request: Request) {
       const allStaffRatings = await prisma.rating.findMany({
         where: {
           serviceRequest: {
-            assignedToId: serviceRequest.assignedToId
+            assignedToId: assignedToId
           }
         },
         select: { rating: true }
       });
 
-      const avg = allStaffRatings.reduce((sum, r) => sum + r.rating, 0) / allStaffRatings.length;
+      const avg = allStaffRatings.reduce((sum, r) => sum + r.rating, 0) / (allStaffRatings.length || 1);
 
       // Update or Create Performance Score for the current month
       await prisma.performanceScore.upsert({
         where: {
           staffId_month_year: {
-            staffId: serviceRequest.assignedToId,
+            staffId: assignedToId,
             month,
             year
           }
@@ -83,7 +88,7 @@ export async function POST(request: Request) {
           tasksCompleted: { increment: 1 }
         },
         create: {
-          staffId: serviceRequest.assignedToId,
+          staffId: assignedToId,
           month,
           year,
           avgRating: avg,
