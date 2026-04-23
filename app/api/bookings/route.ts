@@ -47,7 +47,13 @@ export async function GET(request: Request) {
 
     // Use MongoDB $runCommandRaw to bypass Prisma enum validation.
     const filter: any = { guestId: { $oid: guest.id } };
-    if (status) filter.status = status;
+    if (status) {
+      if (status.includes(',')) {
+        filter.status = { $in: status.split(',') };
+      } else {
+        filter.status = status;
+      }
+    }
 
     const [result, countResult] = await Promise.all([
       (prisma as any).$runCommandRaw({
