@@ -10,29 +10,67 @@ function getUserIdFromRequest(request: Request) {
   return decoded ? decoded.id : null;
 }
 
+async function resolveGuest(userId: string) {
+    const user = await prisma.user.findUnique({ 
+      where: { id: userId }, 
+      select: { id: true, name: true, phone: true, email: true } 
+    });
+    
+    if (user) {
+      let guest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+      if (!guest) {
+        guest = await prisma.guest.create({
+          data: {
+            name: user.name,
+            phone: user.phone,
+            email: user.email,
+            checkInStatus: 'PENDING',
+            referralCode: `${user.name.slice(0, 3).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
+          }
+        });
+        await prisma.wallet.upsert({
+          where: { guestId: guest.id },
+          update: {},
+          create: { guestId: guest.id, balance: 0 }
+        });
+      }
+      return guest;
+    }
+    return await prisma.guest.findUnique({ where: { id: userId } });
+}
+
 export async function POST(request: Request) {
   try {
-    const guestId = getUserIdFromRequest(request);
-    if (!guestId) {
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { amount } = await request.json();
+    const guest = await resolveGuest(userId);
+    if (!guest) {
+        return NextResponse.json({ success: false, error: 'Guest not found' }, { status: 404 });
+    }
 
-    if (!amount || amount <= 0) {
+    let { amount } = await request.json();
+    console.log('[AddMoney] Received amount:', amount, 'type:', typeof amount);
+    
+    // Ensure amount is a number
+    amount = parseFloat(amount as any);
+
+    if (isNaN(amount) || amount <= 0) {
       return NextResponse.json({ success: false, error: 'Invalid amount' }, { status: 400 });
     }
 
     // Find or create wallet
-    let wallet = await prisma.wallet.findUnique({ where: { guestId } });
+    let wallet = await prisma.wallet.findUnique({ where: { guestId: guest.id } });
 
     if (!wallet) {
       wallet = await prisma.wallet.create({
-        data: { guestId, balance: amount },
+        data: { guestId: guest.id, balance: amount },
       });
     } else {
       wallet = await prisma.wallet.update({
-        where: { guestId },
+        where: { guestId: guest.id },
         data: { balance: { increment: amount } },
       });
     }

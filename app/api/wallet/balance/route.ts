@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { verifyToken } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
-import { verifyToken } from '@/lib/auth';
 
 function getUserIdFromRequest(request: Request) {
   const authHeader = request.headers.get('authorization');
@@ -12,7 +12,6 @@ function getUserIdFromRequest(request: Request) {
   return decoded ? decoded.id : null;
 }
 
-// Resolve guest — added self-healing to auto-create missing records
 async function resolveGuest(userId: string) {
   const user = await prisma.user.findUnique({ 
     where: { id: userId }, 
@@ -52,7 +51,7 @@ export async function GET(request: Request) {
     const guest = await resolveGuest(userId);
     if (!guest) return NextResponse.json({ success: false, error: 'Guest not found' }, { status: 404 });
 
-    // Find or create wallet — keyed by guestId
+    // Find or create wallet
     let wallet = await prisma.wallet.findUnique({ where: { guestId: guest.id } });
 
     if (!wallet) {
@@ -61,10 +60,33 @@ export async function GET(request: Request) {
       });
     }
 
+    // --- SELF-HEALING LOGIC ---
+    // Recalculate balance from transactions to be 100% sure
+    const transactions = await prisma.walletTransaction.findMany({
+      where: { walletId: wallet.id }
+    });
+
+    let calculatedBalance = 0;
+    transactions.forEach(tx => {
+      if (tx.type === 'CREDIT') calculatedBalance += tx.amount;
+      else if (tx.type === 'DEBIT') calculatedBalance -= tx.amount;
+    });
+
+    // If there is a mismatch, update the wallet balance field
+    if (Math.abs(wallet.balance - calculatedBalance) > 0.01) {
+      console.log(`[Wallet] Fixing balance mismatch. DB: ${wallet.balance}, Ledger: ${calculatedBalance}`);
+      wallet = await prisma.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: calculatedBalance }
+      });
+    }
+
     return NextResponse.json({
       success: true,
       balance: wallet.balance,
       walletId: wallet.id,
+      guestId: guest.id,
+      userId: userId
     });
   } catch (error: any) {
     console.error('Wallet balance error:', error);
