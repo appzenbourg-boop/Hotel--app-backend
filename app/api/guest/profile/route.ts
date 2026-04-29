@@ -71,7 +71,10 @@ export async function PUT(request: Request) {
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await request.json();
-    const { name, email, address, language, profileImage } = body;
+    const { 
+      name, email, address, language, 
+      profileImage, idType, idNumber, idDocumentFront, idDocumentBack 
+    } = body;
 
     // Update user record
     const updatedUser = await prisma.user.update({
@@ -94,6 +97,11 @@ export async function PUT(request: Request) {
         ...(email && { email }),
         ...(address !== undefined && { address }),
         ...(language && { language }),
+        ...(profileImage !== undefined && { profileImage }),
+        ...(idType !== undefined && { idType }),
+        ...(idNumber !== undefined && { idNumber }),
+        ...(idDocumentFront !== undefined && { idDocumentFront }),
+        ...(idDocumentBack !== undefined && { idDocumentBack }),
       },
     });
 

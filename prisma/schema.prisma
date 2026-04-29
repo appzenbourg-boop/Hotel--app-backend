@@ -61,6 +61,7 @@ model Guest {
   name  String
   phone String @unique
   email String?
+  profileImage String?
 
   address     String?
   dateOfBirth DateTime?
