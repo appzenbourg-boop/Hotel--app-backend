@@ -21,6 +21,7 @@ export async function GET(request: Request) {
         icon: true,
         category: true,
         isActive: true,
+        options: true,
       },
     });
 

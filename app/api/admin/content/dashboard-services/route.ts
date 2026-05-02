@@ -28,6 +28,16 @@ export async function GET(request: Request) {
         propertyId,
         isActive: true,
       },
+      select: {
+        id: true,
+        name: true,
+        iconUrl: true,
+        iconName: true,
+        route: true,
+        isActive: true,
+        order: true,
+        options: true,
+      },
       orderBy: {
         order: 'asc',
       },

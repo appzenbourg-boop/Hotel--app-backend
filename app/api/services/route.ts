@@ -86,7 +86,7 @@ export async function POST(request: Request) {
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await request.json();
-    const { type, title, description, roomId, priority, amount } = body;
+    const { type, title, description, roomId, priority, amount, scheduledAt } = body;
 
     if (!type || !title) {
       return NextResponse.json({ error: 'type and title are required' }, { status: 400 });
@@ -118,7 +118,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Cannot determine property for this request' }, { status: 400 });
     }
 
-    // Fetch custom SLA config if available (same as admin panel)
+    // Map ServiceType to Department
+    const typeToDept: any = {
+        'HOUSEKEEPING': 'HOUSEKEEPING',
+        'TOILETRIES': 'HOUSEKEEPING',
+        'FOOD_ORDER': 'KITCHEN',
+        'ROOM_SERVICE': 'ROOM_SERVICE',
+        'SPA': 'SPA',
+        'LAUNDRY': 'LAUNDRY',
+        'WAKEUP': 'FRONT_DESK',
+        'MAINTENANCE': 'MAINTENANCE'
+    };
+    const targetDept = typeToDept[type] || 'HOUSEKEEPING';
+
+    // Fetch custom SLA config if available
     let slaMinutes = type === 'MAINTENANCE' ? 60 : 30;
     try {
       const config = await prisma.serviceConfig.findUnique({
@@ -128,11 +141,16 @@ export async function POST(request: Request) {
       if (config) slaMinutes = config.totalSla;
     } catch { /* service config may not exist */ }
 
-    // NEW: Automatic Staff Assignment
-    // Find the first available staff member at this property
+    // NEW: Automatic Staff Assignment based on Department
     const availableStaff = await prisma.staff.findFirst({
       where: {
         propertyId,
+        department: targetDept as any,
+        attendances: {
+          some: {
+            punchOut: null
+          }
+        }
       },
       select: { id: true }
     });
@@ -150,6 +168,7 @@ export async function POST(request: Request) {
         status: availableStaff ? 'ACCEPTED' : 'PENDING',
         assignedToId: availableStaff?.id || null,
         slaMinutes,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
       },
       include: {
         assignedTo: {
