@@ -14,10 +14,13 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
     const authData = getAuthData(request);
-    if (!authData) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
     const { searchParams } = new URL(request.url);
     const propertyId = searchParams.get('propertyId');
+
+    // Allow mobile app access without token for content fetching if propertyId is provided
+    if (!authData && (!propertyId || propertyId === 'ALL')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     if (!propertyId) {
       return NextResponse.json({ error: 'Property ID is required' }, { status: 400 });
