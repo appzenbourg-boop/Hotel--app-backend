@@ -169,6 +169,7 @@ model Property {
   systemAlerts    SystemAlert[]    @relation("PropertyToSystemAlert")
   supportTickets  SupportTicket[]  @relation("PropertyToSupportTicket")
   lostItems       LostItem[]       @relation("PropertyToLostItem")
+  dashboardServices DashboardService[] @relation("PropertyToDashboardService")
 
   @@map("properties")
 }
@@ -1080,4 +1081,21 @@ model Referral {
 
   @@index([referrerId])
   @@map("referrals")
+}
+model DashboardService {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  propertyId String   @db.ObjectId
+  property   Property @relation("PropertyToDashboardService", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  name     String
+  iconUrl  String?  // Custom uploaded icon from Cloudinary
+  iconName String?  // Icon name (e.g., key-outline)
+  route    String?  // Deep link route (e.g., /(services)/door)
+  isActive Boolean  @default(true)
+  order    Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("dashboard_services")
 }
