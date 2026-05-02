@@ -56,6 +56,7 @@ export async function GET(request: Request) {
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('Menu fetch error:', error);
-    return NextResponse.json({ error: 'Failed to fetch menu' }, { status: 500 });
+    console.error('Stack:', error.stack);
+    return NextResponse.json({ error: 'Failed to fetch menu', details: error.message }, { status: 500 });
   }
 }
