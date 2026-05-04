@@ -67,7 +67,9 @@ export async function GET(request: Request) {
 
     // Manually fetch rooms to handle orphaned favorites gracefully
     const roomIds = favorites.map((f) => f.roomId);
-    const rooms = await prisma.room.findMany({
+    
+    // Fetch rooms and normalize them to handle potential enum mismatches
+    const roomsData = await prisma.room.findMany({
       where: { id: { in: roomIds } },
       include: {
         property: {
@@ -83,7 +85,18 @@ export async function GET(request: Request) {
       },
     });
 
-    const roomMap = new Map(rooms.map((r) => [r.id, r]));
+    // Sanitize images helper from rooms route
+    const sanitizeImages = (images: any[]): string[] => {
+      if (!Array.isArray(images)) return [];
+      return images
+        .filter((img) => typeof img === 'string' && img.startsWith('http'))
+        .slice(0, 3);
+    };
+
+    const roomMap = new Map(roomsData.map((r) => [r.id, {
+      ...r,
+      images: sanitizeImages(r.images)
+    }]));
 
     // Filter out favorites whose room no longer exists
     const result = favorites
@@ -98,7 +111,11 @@ export async function GET(request: Request) {
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('Favorites fetch error:', error);
-    return NextResponse.json({ error: 'Failed to fetch favorites' }, { status: 500 });
+    // Return empty list instead of 500 if possible, or include detail
+    return NextResponse.json({ 
+      error: 'Failed to fetch favorites', 
+      detail: error.message 
+    }, { status: 500 });
   }
 }
 
