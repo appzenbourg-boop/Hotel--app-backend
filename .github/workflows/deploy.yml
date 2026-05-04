@@ -19,4 +19,5 @@ jobs:
             cd ~/Hotel--app-backend
             git pull origin main
             npm install
-            pm2 restart hotel-backend
+            npm run build
+            pm2 restart hotel-backend || pm2 restart all
