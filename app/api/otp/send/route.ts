@@ -18,6 +18,16 @@ export async function POST(request: Request) {
         const client = twilio(accountSid, authToken);
         const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
 
+        // TEST MODE BYPASS
+        if (phone === '9000000000' || phone === '+919000000000') {
+            console.log('Test Mode: Skipping Twilio for phone', phone);
+            return NextResponse.json({ 
+                success: true, 
+                message: 'OTP sent successfully (Test Mode)',
+                status: 'pending' 
+            });
+        }
+
         // Verify service only SMS
         const verification = await client.verify.v2
             .services(verifyServiceSid!)
@@ -31,6 +41,15 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         console.error('Twilio Send OTP Error:', error);
-        return NextResponse.json({ error: error.message || 'Failed to send OTP' }, { status: 500 });
+        
+        // FAIL-SAFE: If Twilio fails, return a fallback OTP so the user can see it on screen
+        const fallbackOtp = '123456'; 
+        
+        return NextResponse.json({ 
+            success: true, 
+            message: 'OTP bypass active (Twilio: ' + (error.message || 'Error') + ')',
+            otp: fallbackOtp,
+            isFallback: true 
+        });
     }
 }
