@@ -140,6 +140,10 @@ export async function GET(request: Request) {
             checkInTime: true,
             checkOutTime: true,
             phone: true,
+            amenities: {
+              where: { isActive: true },
+              select: { id: true, name: true, icon: true }
+            }
           },
         },
       },

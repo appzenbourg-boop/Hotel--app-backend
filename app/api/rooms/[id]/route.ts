@@ -59,6 +59,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             longitude: true,
             phone: true,
             email: true,
+            amenities: {
+              where: { isActive: true },
+              select: { id: true, name: true, icon: true }
+            }
           },
         })
       : null;
