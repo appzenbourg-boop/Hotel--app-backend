@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'bookingId and type are required' }, { status: 400 });
     }
 
+    // Find the booking including necessary relations
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
       include: { room: true }
@@ -33,41 +34,59 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
     }
 
-    if (type === 'EXTEND') {
-      if (!newCheckOut) return NextResponse.json({ error: 'newCheckOut is required' }, { status: 400 });
-
-      // Update checkOut date
-      const updated = await prisma.booking.update({
-        where: { id: bookingId },
-        data: { checkOut: new Date(newCheckOut) }
-      });
-
-      return NextResponse.json({ success: true, booking: updated });
+    if (!booking.propertyId) {
+      return NextResponse.json({ error: 'Property linking error' }, { status: 400 });
     }
 
-    if (type === 'UPGRADE') {
-      if (!newRoomId) return NextResponse.json({ error: 'newRoomId is required' }, { status: 400 });
+    // Generate unified workflow parameters aligning with original Admin spec
+    const title = type === 'EXTEND' ? `Stay Extension Request` : `Room Upgrade Request`;
+    const description = type === 'EXTEND' 
+        ? `Guest requested to extend stay until ${newCheckOut ? new Date(newCheckOut).toLocaleDateString() : 'TBD'}`
+        : `Guest requested a room upgrade from the current ${booking.room?.type || 'unit'}.`;
 
-      // Free old room, occupy new room
-      await prisma.room.update({
-        where: { id: booking.roomId },
-        data: { status: 'AVAILABLE' }
+    // 🔑 CRITICAL SYNC: Create a ServiceRequest (Concierge type) to act as visual Admin "Approval Request"
+    const serviceRequest = await prisma.serviceRequest.create({
+        data: {
+            type: 'CONCIERGE',
+            title,
+            description,
+            guestId: booking.guestId,
+            roomId: booking.roomId,
+            propertyId: booking.propertyId,
+            priority: 'HIGH',
+            status: 'PENDING',
+            notes: JSON.stringify({
+                requestId: `SR-${Date.now()}`,
+                bookingId,
+                requestType: type,
+                newCheckOut: newCheckOut || null,
+                newRoomId: newRoomId || null,
+                isStayAdjustment: true
+            })
+        }
+    });
+
+    // Automatically spawn System Alert for instant staff dash propagation
+    try {
+      await prisma.systemAlert.create({
+        data: {
+          propertyId: booking.propertyId,
+          message: `⚠️ New ${type} Request`,
+          description: `${title} submitted for Room ${booking.room?.roomNumber || 'N/A'}`,
+          type: 'INFO',
+          category: 'RECEPTIONIST'
+        }
       });
-
-      const updated = await prisma.booking.update({
-        where: { id: bookingId },
-        data: { roomId: newRoomId }
-      });
-
-      await prisma.room.update({
-        where: { id: newRoomId },
-        data: { status: 'OCCUPIED' }
-      });
-
-      return NextResponse.json({ success: true, booking: updated });
+    } catch(e) {
+      console.log("Alert creation skip", e);
     }
 
-    return NextResponse.json({ error: 'Invalid management type' }, { status: 400 });
+    return NextResponse.json({
+      success: true,
+      requestId: serviceRequest.id,
+      message: 'Your request has been submitted for staff approval.'
+    });
+
   } catch (error: any) {
     console.error('Booking management error:', error);
     return NextResponse.json({ error: 'Failed to manage booking', detail: error.message }, { status: 500 });
