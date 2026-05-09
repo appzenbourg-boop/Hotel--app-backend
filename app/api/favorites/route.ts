@@ -78,6 +78,7 @@ export async function GET(request: Request) {
             name: true,
             address: true,
             images: true,
+            coverImage: true,
             latitude: true,
             longitude: true,
           },

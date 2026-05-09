@@ -63,7 +63,29 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         })
       : null;
 
-    return NextResponse.json({ ...room, property });
+    // Fetch dynamic settings for this property
+    let settings = null;
+    if (property) {
+      try {
+        settings = await (prisma as any).propertySettings.findUnique({
+          where: { propertyId: property.id }
+        });
+      } catch (e) {
+        console.log('[GuestAPI] Settings fetch fallback:', e);
+      }
+    }
+
+    const enhancedProperty = property ? {
+      ...property,
+      settings: settings || {
+        gstPercent: 18.0,
+        serviceChargePercent: 0.0,
+        luxuryTaxPercent: 0.0,
+        defaultDiscountPercent: 0.0
+      }
+    } : null;
+
+    return NextResponse.json({ ...room, property: enhancedProperty });
   } catch (error: any) {
     console.error('Room fetch error:', error);
     return NextResponse.json({ error: 'Failed to fetch room', detail: error.message }, { status: 500 });
