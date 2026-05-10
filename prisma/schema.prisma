@@ -34,6 +34,10 @@ model User {
   workplace       Property?  @relation("WorkerRelation", fields: [workplaceId], references: [id])
   staff           Staff?
 
+  requestedBookingRequests BookingRequest[] @relation("RequestedBy")
+  approvedBookingRequests  BookingRequest[] @relation("ApprovedBy")
+  rejectedBookingRequests  BookingRequest[] @relation("RejectedBy")
+
   @@map("users")
 }
 
@@ -278,6 +282,7 @@ model Booking {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   lostItems LostItem[]
+  requests  BookingRequest[]
 
   @@index([propertyId])
   @@index([status])
@@ -899,6 +904,47 @@ model InAppNotification {
 
   @@index([userId, isRead])
   @@map("in_app_notifications")
+}
+
+model BookingRequest {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId String   @db.ObjectId
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  type      BookingRequestType
+  status    ApprovalStatus     @default(PENDING)
+
+  // Request Details
+  // For upgrades: { newRoomId: string, extraCharge: number }
+  // For extensions: { newCheckOut: Date, extraCharge: number }
+  details   Json 
+
+  requestedById String @db.ObjectId
+  requestedBy   User   @relation("RequestedBy", fields: [requestedById], references: [id])
+
+  approvedById  String? @db.ObjectId
+  approvedBy    User?   @relation("ApprovedBy", fields: [approvedById], references: [id])
+
+  rejectedById  String? @db.ObjectId
+  rejectedBy    User?   @relation("RejectedBy", fields: [rejectedById], references: [id])
+
+  rejectionReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("booking_requests")
+}
+
+enum BookingRequestType {
+  UPGRADE
+  EXTENSION
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 model Message {
