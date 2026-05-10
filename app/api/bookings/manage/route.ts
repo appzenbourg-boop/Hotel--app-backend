@@ -24,10 +24,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'bookingId and type are required' }, { status: 400 });
     }
 
-    // Find the booking including necessary relations
+    // Find the booking including necessary relations to propagate notifications properly
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
-      include: { room: true }
+      include: { 
+        room: true,
+        property: {
+          select: { ownerIds: true }
+        }
+      }
     });
 
     if (!booking) {
@@ -44,7 +49,7 @@ export async function POST(request: Request) {
         ? `Guest requested to extend stay until ${newCheckOut ? new Date(newCheckOut).toLocaleDateString() : 'TBD'}`
         : `Guest requested a room upgrade from the current ${booking.room?.type || 'unit'}.`;
 
-    // 🔑 CRITICAL SYNC: Create a ServiceRequest (Concierge type) to act as visual Admin "Approval Request"
+    // 🔑 Create ServiceRequest as logical anchor for ticket queues
     const serviceRequest = await prisma.serviceRequest.create({
         data: {
             type: 'CONCIERGE',
@@ -66,7 +71,37 @@ export async function POST(request: Request) {
         }
     });
 
-    // Automatically spawn System Alert for instant staff dash propagation
+    // 🚀 BROADCAST IN-APP NOTIFICATIONS (Fires the Admin Header Bell & Sound)
+    try {
+      const admins = await prisma.user.findMany({
+        where: {
+          OR: [
+            { id: { in: booking.property?.ownerIds || [] } },
+            { 
+              role: { in: ['SUPER_ADMIN', 'HOTEL_ADMIN', 'MANAGER', 'RECEPTIONIST'] }, 
+              workplaceId: booking.propertyId 
+            }
+          ]
+        },
+        select: { id: true }
+      });
+
+      if (admins.length > 0) {
+        await prisma.inAppNotification.createMany({
+          data: admins.map(admin => ({
+            userId: admin.id,
+            title: `⚠️ New ${type} Request`,
+            description: `${title} from Room ${booking.room?.roomNumber || 'N/A'} requires verification.`,
+            type: 'ALERT',
+            isRead: false
+          }))
+        });
+      }
+    } catch (notifyErr) {
+      console.error("InAppNotification deployment skipped/failed:", notifyErr);
+    }
+
+    // Automatically spawn System Alert for internal dash charts
     try {
       await prisma.systemAlert.create({
         data: {
