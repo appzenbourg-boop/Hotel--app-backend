@@ -192,6 +192,38 @@ export async function POST(request: Request) {
       }).catch(() => {});
     }
 
+    // 🚀 BROADCAST TO ADMIN PANEL (Triggers the Dashboard Bell & Popups for Owners/Managers)
+    try {
+      const property = await prisma.property.findUnique({
+        where: { id: propertyId },
+        select: { ownerIds: true, name: true }
+      });
+
+      const admins = await prisma.user.findMany({
+        where: {
+          OR: [
+            { id: { in: property?.ownerIds || [] } },
+            { role: { in: ['SUPER_ADMIN', 'HOTEL_ADMIN', 'MANAGER'] }, workplaceId: propertyId }
+          ]
+        },
+        select: { id: true }
+      });
+
+      if (admins.length > 0) {
+        await prisma.inAppNotification.createMany({
+          data: admins.map(admin => ({
+            userId: admin.id,
+            title: `New Guest Request: ${type.replace('_', ' ')}`,
+            description: `${title} requested by guest. Check Services section for details.`,
+            type: 'TASK',
+            isRead: false
+          }))
+        });
+      }
+    } catch (e) {
+      console.error('Admin broadcast error:', e);
+    }
+
     return NextResponse.json({ success: true, request: serviceRequest });
   } catch (error: any) {
     console.error('Create service request error:', error);
