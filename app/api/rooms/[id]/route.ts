@@ -79,6 +79,39 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }
     }
 
+    // Fetch active/upcoming bookings to support date blocking in client calendars
+    let roomBookings: any[] = [];
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const bookingsResult = await (prisma as any).$runCommandRaw({
+        find: 'bookings',
+        filter: {
+          roomId: { $oid: id },
+          status: { $in: ['RESERVED', 'CHECKED_IN'] },
+          checkOut: { $gte: { $date: today.toISOString() } },
+        },
+        projection: {
+          _id: 1,
+          checkIn: 1,
+          checkOut: 1,
+          status: 1,
+        },
+        sort: { checkIn: 1 },
+      });
+
+      const rawBookings = bookingsResult?.cursor?.firstBatch ?? [];
+      roomBookings = rawBookings.map((doc: any) => ({
+        id: doc._id?.$oid || doc._id,
+        checkIn: doc.checkIn?.$date ? new Date(doc.checkIn.$date).toISOString() : doc.checkIn,
+        checkOut: doc.checkOut?.$date ? new Date(doc.checkOut.$date).toISOString() : doc.checkOut,
+        status: doc.status,
+      }));
+    } catch (bookingErr) {
+      console.error('[GuestAPI] Bookings fetch fallback err:', bookingErr);
+    }
+
     const enhancedProperty = property ? {
       ...property,
       settings: settings || {
@@ -89,7 +122,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }
     } : null;
 
-    return NextResponse.json({ ...room, property: enhancedProperty });
+    return NextResponse.json({ 
+      ...room, 
+      property: enhancedProperty, 
+      bookings: roomBookings 
+    });
   } catch (error: any) {
     console.error('Room fetch error:', error);
     return NextResponse.json({ error: 'Failed to fetch room', detail: error.message }, { status: 500 });
