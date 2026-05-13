@@ -46,16 +46,17 @@ export default function RazorpayCheckout() {
 
         // Build redirect URLs — use what the app passed, or fall back to hotel:// scheme
         const onSuccess = (response: any) => {
-            const params =
-                `?razorpay_payment_id=${response.razorpay_payment_id}` +
+            const queryParams =
+                `razorpay_payment_id=${response.razorpay_payment_id}` +
                 `&razorpay_order_id=${response.razorpay_order_id}` +
                 `&razorpay_signature=${response.razorpay_signature}`
 
             if (successUrl) {
-                // successUrl already contains the base (e.g. exp://192.168.29.72:8081/--/payment-result)
-                window.location.href = decodeURIComponent(successUrl) + params
+                const decodedUrl = decodeURIComponent(successUrl)
+                const separator = decodedUrl.includes('?') ? '&' : '?'
+                window.location.href = decodedUrl + separator + queryParams
             } else {
-                window.location.href = `hotel://payment-result${params}`
+                window.location.href = `hotel://payment-result?${queryParams}`
             }
         }
 
