@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import twilio from 'twilio';
 
 export const dynamic = 'force-dynamic';
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
-
+/**
+ * For Firebase Phone Auth, the SMS is triggered directly from the client (mobile/web).
+ * This endpoint remains to provide a consistent API for the client to signal intent
+ * or for the backend to perform any pre-verification checks (e.g. rate limiting).
+ */
 export async function POST(request: Request) {
     try {
         const { phone } = await request.json();
@@ -15,41 +15,17 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Phone number is required' }, { status: 400 });
         }
 
-        const client = twilio(accountSid, authToken);
-        const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
-
-        // TEST MODE BYPASS
-        if (phone === '9000000000' || phone === '+919000000000') {
-            console.log('Test Mode: Skipping Twilio for phone', phone);
-            return NextResponse.json({ 
-                success: true, 
-                message: 'OTP sent successfully (Test Mode)',
-                status: 'pending' 
-            });
-        }
-
-        // Verify service only SMS
-        const verification = await client.verify.v2
-            .services(verifyServiceSid!)
-            .verifications.create({ to: formattedPhone, channel: 'sms' });
+        console.log(`[Firebase OTP] Client initiating SMS for: ${phone}`);
 
         return NextResponse.json({ 
             success: true, 
-            message: 'OTP sent successfully',
-            status: verification.status 
+            message: 'Initiate Firebase Phone Auth on the client side',
+            provider: 'firebase',
+            phone
         });
 
     } catch (error: any) {
-        console.error('Twilio Send OTP Error:', error);
-        
-        // FAIL-SAFE: If Twilio fails, return a fallback OTP so the user can see it on screen
-        const fallbackOtp = '123456'; 
-        
-        return NextResponse.json({ 
-            success: true, 
-            message: 'OTP bypass active (Twilio: ' + (error.message || 'Error') + ')',
-            otp: fallbackOtp,
-            isFallback: true 
-        });
+        console.error('OTP Send Route Error:', error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

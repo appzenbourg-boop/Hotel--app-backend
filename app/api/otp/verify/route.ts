@@ -1,66 +1,71 @@
 import { NextResponse } from 'next/server';
-import twilio from 'twilio';
+import { auth } from '@/lib/firebase';
 import { prisma } from '@/lib/prisma';
 import { signToken } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
-
 export async function POST(request: Request) {
   try {
-    const { phone, code } = await request.json();
+    const { idToken, phone } = await request.json();
 
-    if (!phone || !code) {
-      return NextResponse.json({ error: 'Phone number and verification code are required' }, { status: 400 });
+    if (!idToken) {
+      return NextResponse.json({ error: 'Firebase idToken is required' }, { status: 400 });
     }
 
-    const client = twilio(accountSid, authToken);
-    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+    // 1. Verify the Firebase Token via Admin SDK
+    let decodedToken;
+    try {
+      decodedToken = await auth.verifyIdToken(idToken);
+    } catch (verifyError: any) {
+      console.error('Firebase Token Verification Failed:', verifyError.message);
+      return NextResponse.json({ error: 'Invalid or expired Firebase token' }, { status: 401 });
+    }
 
-    // FAIL-SAFE: Allow 123456 for any number if Twilio is failing
-    let status = 'pending';
-    if (code === '123456') {
-      console.log('Fail-safe: Bypassing verification with master code for', phone);
-      status = 'approved';
+    const verifiedPhone = decodedToken.phone_number;
+
+    if (!verifiedPhone) {
+      return NextResponse.json({ error: 'Token verified but no phone number found' }, { status: 401 });
+    }
+
+    // 2. Identify the User in the Hotel Database
+    // Note: We use the verified phone from the token as the source of truth.
+    // We match the last 10 digits to handle varying country code formats.
+    const phoneSuffix = verifiedPhone.slice(-10);
+    
+    const user = await prisma.user.findFirst({ 
+      where: { 
+        phone: { contains: phoneSuffix } 
+      } 
+    });
+
+    if (user) {
+      // Existing User: Log them in
+      const token = signToken({ id: user.id, role: user.role });
+      
+      return NextResponse.json({
+        success: true,
+        isNewUser: false,
+        token,
+        user: { 
+            id: user.id, 
+            name: user.name, 
+            phone: user.phone, 
+            role: user.role 
+        },
+      });
     } else {
-      try {
-        const verificationCheck = await client.verify.v2
-          .services(verifyServiceSid!)
-          .verificationChecks.create({ to: formattedPhone, code });
-        status = verificationCheck.status;
-      } catch (e) {
-        console.error('Twilio Verify Error (falling back):', e);
-        // If Twilio fails here too, we can't do much, but we already handled 123456 above
-      }
+      // New User: Phone verified, proceed to registration
+      return NextResponse.json({
+        success: true,
+        isNewUser: true,
+        message: 'Phone verified successfully via Firebase',
+        verifiedPhone
+      });
     }
 
-    if (status === 'approved') {
-      // Look up user in the shared users table
-      const user = await prisma.user.findFirst({ where: { phone } });
-
-      if (user) {
-        const token = signToken({ id: user.id, role: user.role });
-        return NextResponse.json({
-          success: true,
-          isNewUser: false,
-          token,
-          user: { id: user.id, name: user.name, phone: user.phone, role: user.role },
-        });
-      } else {
-        return NextResponse.json({
-          success: true,
-          isNewUser: true,
-          message: 'Phone verified successfully',
-        });
-      }
-    }
-
-    return NextResponse.json({ error: 'Invalid or expired OTP' }, { status: 400 });
   } catch (error: any) {
-    console.error('Twilio Verify OTP Error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to verify OTP' }, { status: 500 });
+    console.error('Verify OTP Route Error:', error);
+    return NextResponse.json({ error: error.message || 'Verification failed' }, { status: 500 });
   }
 }
