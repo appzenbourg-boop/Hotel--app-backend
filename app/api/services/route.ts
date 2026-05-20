@@ -164,7 +164,7 @@ export async function POST(request: Request) {
         title,
         description: description || null,
         priority: priority || 'NORMAL',
-        amount: (type === 'FOOD_ORDER' || type === 'SPA') ? (amount || null) : null,
+        amount: amount || null,
         status: availableStaff ? 'ACCEPTED' : 'PENDING',
         assignedToId: availableStaff?.id || null,
         slaMinutes,

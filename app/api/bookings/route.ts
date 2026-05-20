@@ -150,9 +150,29 @@ export async function GET(request: Request) {
     });
     const roomMap = new Map(rooms.map((r) => [r.id, r]));
 
-    const bookings = normalized.map((b: any) => ({
-      ...b,
-      room: roomMap.get(b.roomId) || null,
+    const bookings = await Promise.all(normalized.map(async (b: any) => {
+      let extraServiceCharges = 0;
+      if (b.status === 'CHECKED_IN' || b.status === 'CHECKED_OUT') {
+         const services = await prisma.serviceRequest.findMany({
+            where: {
+               guestId: b.guestId,
+               roomId: b.roomId,
+               createdAt: { gte: b.checkIn, lte: b.checkOut },
+               status: { in: ['PENDING', 'ACCEPTED', 'COMPLETED', 'IN_PROGRESS'] }
+            }
+         });
+         extraServiceCharges = services.reduce((sum, s) => sum + (s.amount || 0), 0);
+      }
+
+      // If user only wants red button for extra charges, we can provide a calculated field
+      const currentBalance = Math.max(0, (b.totalAmount || 0) + extraServiceCharges - (b.paidAmount || 0));
+
+      return {
+        ...b,
+        extraServiceCharges,
+        currentBalance,
+        room: roomMap.get(b.roomId) || null,
+      };
     }));
 
     return NextResponse.json({ 

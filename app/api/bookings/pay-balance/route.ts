@@ -24,18 +24,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'bookingId and amount are required' }, { status: 400 });
     }
 
-    const booking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: { guest: true }
+    const guest = await prisma.guest.findUnique({
+      where: { phone: (await prisma.user.findUnique({ where: { id: userId } }))?.phone || '' }
+    });
+    // Fallback if not found by phone
+    const activeGuestId = guest ? guest.id : userId;
+
+    const booking = await prisma.booking.findFirst({
+      where: { id: bookingId, guestId: activeGuestId },
     });
 
-    if (!booking) return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
-
-    // Re-verify it belongs to the active guest user context
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
-    if (booking.guest.phone !== user?.phone) {
-       return NextResponse.json({ error: 'Ownership mismatch' }, { status: 403 });
-    }
+    if (!booking) return NextResponse.json({ error: 'Booking not found or Ownership mismatch' }, { status: 404 });
 
     // Transactional execution of deduction & payment logging
     const result = await prisma.$transaction(async (tx) => {

@@ -43,7 +43,7 @@ export async function GET(
           gte: booking.checkIn,
           lte: booking.checkOut,
         },
-        status: { in: ['COMPLETED', 'ACCEPTED'] } // Only bill active/done services
+        status: { in: ['PENDING', 'ACCEPTED', 'COMPLETED', 'IN_PROGRESS'] } // Bill active, pending, or done services
       }
     });
 
