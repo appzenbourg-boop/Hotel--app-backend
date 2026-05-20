@@ -152,24 +152,42 @@ export async function GET(request: Request) {
 
     const bookings = await Promise.all(normalized.map(async (b: any) => {
       let extraServiceCharges = 0;
-      if (b.status === 'CHECKED_IN' || b.status === 'CHECKED_OUT') {
-         const services = await prisma.serviceRequest.findMany({
-            where: {
-               guestId: b.guestId,
-               roomId: b.roomId,
-               createdAt: { gte: b.checkIn, lte: b.checkOut },
-               status: { in: ['PENDING', 'ACCEPTED', 'COMPLETED', 'IN_PROGRESS'] }
-            }
-         });
-         extraServiceCharges = services.reduce((sum, s) => sum + (s.amount || 0), 0);
-      }
+      let upgradeExtensionCharges = 0;
 
-      // If user only wants red button for extra charges, we can provide a calculated field
+      // 1. Sum up service request charges (food, laundry, spa, etc.)
+      try {
+        const services = await prisma.serviceRequest.findMany({
+          where: {
+            guestId: b.guestId,
+            roomId: b.roomId,
+            createdAt: { gte: b.checkIn },
+            status: { in: ['PENDING', 'ACCEPTED', 'COMPLETED', 'IN_PROGRESS'] }
+          }
+        });
+        extraServiceCharges = services.reduce((sum, s) => sum + (s.amount || 0), 0);
+      } catch (e) {}
+
+      // 2. Sum up APPROVED upgrade/extension charges from BookingRequest table
+      try {
+        const bookingRequests = await prisma.bookingRequest.findMany({
+          where: {
+            bookingId: b.id,
+            status: 'APPROVED'
+          }
+        });
+        upgradeExtensionCharges = bookingRequests.reduce((sum, r) => {
+          const details = r.details as any;
+          return sum + (details?.extraCharge || 0);
+        }, 0);
+      } catch (e) {}
+
+      // Total outstanding = base room total + approved upgrades/extensions + services - what's already paid
       const currentBalance = Math.max(0, (b.totalAmount || 0) + extraServiceCharges - (b.paidAmount || 0));
 
       return {
         ...b,
         extraServiceCharges,
+        upgradeExtensionCharges,
         currentBalance,
         room: roomMap.get(b.roomId) || null,
       };

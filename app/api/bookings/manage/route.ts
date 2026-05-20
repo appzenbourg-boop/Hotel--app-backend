@@ -39,14 +39,36 @@ export async function POST(request: Request) {
     // Normalize Type for unified BookingRequest architecture (Main schema uses EXTENSION)
     const unifiedType = type === 'EXTEND' ? 'EXTENSION' : 'UPGRADE';
 
-    // Step 2: Construct exact details payload matching Admin Approvals expectations
-    const requestDetails: any = {
-      extraCharge: 0 // To be calculated by admin during approval
-    };
+    // Step 2: Calculate actual extra charge
+    const requestDetails: any = {};
+    
     if (unifiedType === 'EXTENSION') {
       requestDetails.newCheckOut = newCheckOut;
+      // Calculate extra nights cost
+      const currentCheckOut = new Date(booking.checkOut);
+      const newCheckOutDate = new Date(newCheckOut);
+      const extraNightsMs = newCheckOutDate.getTime() - currentCheckOut.getTime();
+      const extraNights = Math.max(0, Math.ceil(extraNightsMs / (1000 * 60 * 60 * 24)));
+      const perNightRate = booking.room?.basePrice || 0;
+      requestDetails.extraCharge = extraNights * perNightRate;
+      requestDetails.extraNights = extraNights;
+      requestDetails.perNightRate = perNightRate;
     } else {
       requestDetails.newRoomId = newRoomId;
+      // Calculate upgrade price difference
+      const newRoom = await prisma.room.findUnique({ where: { id: newRoomId } });
+      const currentRoomPrice = booking.room?.basePrice || 0;
+      const newRoomPrice = newRoom?.basePrice || 0;
+      const priceDiff = Math.max(0, newRoomPrice - currentRoomPrice);
+      // Calculate remaining nights
+      const checkIn = new Date(booking.checkIn);
+      const checkOut = new Date(booking.checkOut);
+      const remainingNightsMs = checkOut.getTime() - Math.max(checkIn.getTime(), Date.now());
+      const remainingNights = Math.max(1, Math.ceil(remainingNightsMs / (1000 * 60 * 60 * 24)));
+      requestDetails.extraCharge = priceDiff * remainingNights;
+      requestDetails.priceDifference = priceDiff;
+      requestDetails.remainingNights = remainingNights;
+      requestDetails.newRoomPrice = newRoomPrice;
     }
 
     // 🔑 STEP 3: THE MASTER FIX — Write directly into official BOOKING REQUEST TABLE

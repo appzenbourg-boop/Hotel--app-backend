@@ -34,16 +34,20 @@ export async function GET(
     }
 
     // Fetch service requests during the stay period
-    // We map to the guest and room since there's no direct bookingId in ServiceRequest
     const serviceRequests = await prisma.serviceRequest.findMany({
       where: {
         guestId: booking.guestId,
         roomId: booking.roomId,
-        createdAt: {
-          gte: booking.checkIn,
-          lte: booking.checkOut,
-        },
-        status: { in: ['PENDING', 'ACCEPTED', 'COMPLETED', 'IN_PROGRESS'] } // Bill active, pending, or done services
+        createdAt: { gte: booking.checkIn },
+        status: { in: ['PENDING', 'ACCEPTED', 'COMPLETED', 'IN_PROGRESS'] }
+      }
+    });
+
+    // Fetch approved booking requests (upgrades/extensions)
+    const bookingRequests = await prisma.bookingRequest.findMany({
+      where: {
+        bookingId: booking.id,
+        status: 'APPROVED'
       }
     });
 
@@ -66,11 +70,36 @@ export async function GET(
       .filter(s => s.type !== 'FOOD_ORDER' && s.type !== 'ROOM_SERVICE')
       .reduce((sum, s) => sum + (s.amount || 0), 0);
 
-    // 4. Tax (Assume 12% on room charge)
+    // 4. Upgrade/Extension Charges
+    let upgradeCharge = 0;
+    let extensionCharge = 0;
+    const adjustmentItems: { type: string; description: string; amount: number }[] = [];
+    
+    for (const req of bookingRequests) {
+      const details = req.details as any;
+      const charge = details?.extraCharge || 0;
+      if (req.type === 'UPGRADE') {
+        upgradeCharge += charge;
+        adjustmentItems.push({
+          type: 'UPGRADE',
+          description: `Room Upgrade (Diff: INR ${details?.priceDifference || 0}/night x ${details?.remainingNights || 1} nights)`,
+          amount: charge
+        });
+      } else if (req.type === 'EXTENSION') {
+        extensionCharge += charge;
+        adjustmentItems.push({
+          type: 'EXTENSION',
+          description: `Stay Extension (${details?.extraNights || 0} extra nights x INR ${details?.perNightRate || 0}/night)`,
+          amount: charge
+        });
+      }
+    }
+
+    // 5. Tax (12% on room charge only)
     const tax = roomCharge * 0.12;
 
-    // 5. Total Calculations
-    const totalAmount = roomCharge + culinaryCharge + serviceCharge + tax;
+    // 6. Total Calculations
+    const totalAmount = roomCharge + culinaryCharge + serviceCharge + upgradeCharge + extensionCharge + tax;
     const paidAmount = (booking as any).paidAmount || 0;
     const balanceAmount = Math.max(0, totalAmount - paidAmount);
 
@@ -86,10 +115,13 @@ export async function GET(
         roomCharge,
         culinaryCharge,
         serviceCharge,
+        upgradeCharge,
+        extensionCharge,
+        adjustmentItems,
         tax,
         totalStayAmount: totalAmount,
-        paidAlready: paidAmount, // Amount paid during booking
-        balanceAmount: balanceAmount, // Final amount due at checkout
+        paidAlready: paidAmount,
+        balanceAmount: balanceAmount,
         currency: 'INR',
       }
     });
