@@ -180,6 +180,25 @@ export async function POST(request: Request) {
       }
     });
 
+    // Auto-update booking total if amount is provided
+    if (amount && Number(amount) > 0) {
+      const activeBooking = await prisma.booking.findFirst({
+        where: { guestId: guest.id, status: 'CHECKED_IN' },
+        orderBy: { createdAt: 'desc' }
+      });
+      
+      if (activeBooking) {
+        await prisma.booking.update({
+          where: { id: activeBooking.id },
+          data: {
+            totalAmount: {
+              increment: Number(amount)
+            }
+          }
+        });
+      }
+    }
+
     if (availableStaff) {
       // Notify staff member via In-App Notification
       await prisma.inAppNotification.create({
