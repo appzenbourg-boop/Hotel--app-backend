@@ -48,7 +48,11 @@ export async function POST(request: Request) {
         key: process.env.RAZORPAY_KEY_ID
     });
   } catch (error: any) {
-    console.error('Razorpay Error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to create payment order' }, { status: 500 });
+    console.error('=== RAZORPAY ORDER CREATION ERROR ===');
+    console.error(`Key ID Length: ${(process.env.RAZORPAY_KEY_ID || '').trim().length}`);
+    console.error(`Key Secret Length: ${(process.env.RAZORPAY_KEY_SECRET || '').trim().length}`);
+    console.error('Error Details:', JSON.stringify(error, null, 2));
+    console.error('=======================================');
+    return NextResponse.json({ success: false, error: 'Failed to create payment order', details: error?.error?.description || error.message }, { status: 500 });
   }
 }

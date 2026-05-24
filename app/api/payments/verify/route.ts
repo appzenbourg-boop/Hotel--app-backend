@@ -118,7 +118,11 @@ export async function POST(request: Request) {
     });
 
   } catch (error: any) {
-    console.error('Razorpay Verification Error:', error);
-    return NextResponse.json({ error: 'Failed to verify payment and update wallet' }, { status: 500 });
+    console.error('=== RAZORPAY VERIFICATION ERROR ===');
+    console.error(`Key ID Length: ${(process.env.RAZORPAY_KEY_ID || '').trim().length}`);
+    console.error(`Key Secret Length: ${(process.env.RAZORPAY_KEY_SECRET || '').trim().length}`);
+    console.error('Error Details:', JSON.stringify(error, null, 2));
+    console.error('======================================');
+    return NextResponse.json({ error: 'Failed to verify payment and update wallet', details: error?.error?.description || error.message }, { status: 500 });
   }
 }
