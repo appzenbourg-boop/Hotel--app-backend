@@ -55,8 +55,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Incomplete payment information' }, { status: 400 });
     }
 
-    const key_id = process.env.RAZORPAY_KEY_ID || '';
-    const key_secret = process.env.RAZORPAY_KEY_SECRET || '';
+    const key_id = (process.env.RAZORPAY_KEY_ID || '').trim();
+    const key_secret = (process.env.RAZORPAY_KEY_SECRET || '').trim();
 
     const body = razorpay_order_id + "|" + razorpay_payment_id;
 

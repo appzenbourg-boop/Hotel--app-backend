@@ -15,8 +15,8 @@ export async function POST(request: Request) {
     const userId = getUserIdFromRequest(request);
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const key_id = process.env.RAZORPAY_KEY_ID || '';
-    const key_secret = process.env.RAZORPAY_KEY_SECRET || '';
+    const key_id = (process.env.RAZORPAY_KEY_ID || '').trim();
+    const key_secret = (process.env.RAZORPAY_KEY_SECRET || '').trim();
     
     if (!key_id || !key_secret) {
         console.error('Razorpay keys missing from .env');
