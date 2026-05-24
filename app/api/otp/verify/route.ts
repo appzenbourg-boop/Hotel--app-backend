@@ -43,6 +43,8 @@ export async function POST(request: Request) {
       // Existing User: Log them in
       const token = signToken({ id: user.id, role: user.role });
       
+      const existingGuest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+
       return NextResponse.json({
         success: true,
         isNewUser: false,
@@ -51,7 +53,8 @@ export async function POST(request: Request) {
             id: user.id, 
             name: user.name, 
             phone: user.phone, 
-            role: user.role 
+            role: user.role,
+            profileImage: existingGuest?.profileImage || null
         },
       });
     } else {

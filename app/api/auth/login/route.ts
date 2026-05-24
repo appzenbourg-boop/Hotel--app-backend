@@ -32,9 +32,9 @@ export async function POST(request: Request) {
     }
 
     // Ensure Guest profile exists (admin panel does this too)
-    const existingGuest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+    let existingGuest = await prisma.guest.findUnique({ where: { phone: user.phone } });
     if (!existingGuest) {
-      await prisma.guest.create({
+      existingGuest = await prisma.guest.create({
         data: {
           name: user.name,
           email: user.email,
@@ -48,7 +48,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       token,
-      user: { id: user.id, name: user.name, phone: user.phone, email: user.email, role: user.role },
+      user: { 
+        id: user.id, 
+        name: user.name, 
+        phone: user.phone, 
+        email: user.email, 
+        role: user.role,
+        profileImage: existingGuest.profileImage || null
+      },
     });
   } catch (error: any) {
     console.error('Login error:', error);
