@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
         const picture = payload.picture || '';
 
         // Find or create guest user
-        let user = await prisma.guest.findUnique({
+        let user = await prisma.guest.findFirst({
             where: { email }
         });
 
@@ -46,10 +46,8 @@ export async function POST(req: NextRequest) {
                 data: {
                     email,
                     name,
-                    phone: '', 
+                    phone: `google_${Date.now()}`, // phone is required and @unique in Guest
                     profileImage: picture,
-                    status: 'ACTIVE',
-                    source: 'GOOGLE',
                 }
             });
         } else if (!user.profileImage && picture) {
