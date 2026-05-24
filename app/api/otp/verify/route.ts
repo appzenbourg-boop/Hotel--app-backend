@@ -43,7 +43,9 @@ export async function POST(request: Request) {
       // Existing User: Log them in
       const token = signToken({ id: user.id, role: user.role });
       
-      const existingGuest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+      const existingGuest = await prisma.guest.findFirst({ 
+        where: { phone: { contains: phoneSuffix } } 
+      });
 
       return NextResponse.json({
         success: true,

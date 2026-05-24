@@ -32,7 +32,10 @@ export async function POST(request: Request) {
     }
 
     // Ensure Guest profile exists (admin panel does this too)
-    let existingGuest = await prisma.guest.findUnique({ where: { phone: user.phone } });
+    const phoneSuffix = user.phone.slice(-10);
+    let existingGuest = await prisma.guest.findFirst({ 
+      where: { phone: { contains: phoneSuffix } } 
+    });
     if (!existingGuest) {
       existingGuest = await prisma.guest.create({
         data: {
