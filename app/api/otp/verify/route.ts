@@ -1,37 +1,57 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/firebase';
 import { prisma } from '@/lib/prisma';
 import { signToken } from '@/lib/auth';
+import bcrypt from 'bcryptjs';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const { idToken, phone } = await request.json();
+    const { phone, otp } = await request.json();
 
-    if (!idToken) {
-      return NextResponse.json({ error: 'Firebase idToken is required' }, { status: 400 });
+    if (!phone || !otp) {
+      return NextResponse.json({ error: 'Phone number and OTP are required' }, { status: 400 });
     }
 
-    // 1. Verify the Firebase Token via Admin SDK
-    let decodedToken;
-    try {
-      decodedToken = await auth.verifyIdToken(idToken);
-    } catch (verifyError: any) {
-      console.error('Firebase Token Verification Failed:', verifyError.message);
-      return NextResponse.json({ error: 'Invalid or expired Firebase token' }, { status: 401 });
+    const normalizedPhone = phone.replace(/^\+91/, '').trim();
+
+    // 1. Look up the OTP record
+    const otpRecord = await prisma.otpVerification.findUnique({
+      where: { phone: normalizedPhone }
+    });
+
+    if (!otpRecord) {
+      return NextResponse.json({ error: 'No OTP requested for this number' }, { status: 400 });
     }
 
-    const verifiedPhone = decodedToken.phone_number;
-
-    if (!verifiedPhone) {
-      return NextResponse.json({ error: 'Token verified but no phone number found' }, { status: 401 });
+    // 2. Validate Expiry
+    if (otpRecord.expiresAt < new Date()) {
+      await prisma.otpVerification.delete({ where: { phone: normalizedPhone } });
+      return NextResponse.json({ error: 'OTP expired. Please request a new one.' }, { status: 400 });
     }
 
-    // 2. Identify the User in the Hotel Database
-    // Note: We use the verified phone from the token as the source of truth.
-    // We match the last 10 digits to handle varying country code formats.
-    const phoneSuffix = verifiedPhone.slice(-10);
+    // 3. Validate Attempts
+    if (otpRecord.attempts >= 3) {
+      await prisma.otpVerification.delete({ where: { phone: normalizedPhone } });
+      return NextResponse.json({ error: 'Too many failed attempts. Please request a new OTP.' }, { status: 429 });
+    }
+
+    // 4. Validate OTP match
+    const isValid = await bcrypt.compare(otp.toString(), otpRecord.otpHash);
+    
+    if (!isValid) {
+      await prisma.otpVerification.update({
+        where: { phone: normalizedPhone },
+        data: { attempts: otpRecord.attempts + 1 }
+      });
+      return NextResponse.json({ error: 'Invalid OTP' }, { status: 400 });
+    }
+
+    // 5. Success! Delete the one-time use OTP record
+    await prisma.otpVerification.delete({ where: { phone: normalizedPhone } });
+
+    // 6. Identify the User in the Hotel Database
+    const phoneSuffix = normalizedPhone.slice(-10);
     
     const user = await prisma.user.findFirst({ 
       where: { 
@@ -64,8 +84,8 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         isNewUser: true,
-        message: 'Phone verified successfully via Firebase',
-        verifiedPhone
+        message: 'Phone verified successfully',
+        verifiedPhone: normalizedPhone
       });
     }
 

@@ -1156,3 +1156,14 @@ model DashboardService {
 
   @@map("dashboard_services")
 }
+
+model OtpVerification {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  phone     String   @unique
+  otpHash   String   // bcrypt hash of the OTP
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("otp_verifications")
+}
