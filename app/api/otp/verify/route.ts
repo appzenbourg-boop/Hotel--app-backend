@@ -7,48 +7,63 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const { phone, otp } = await request.json();
+    const { phone, otp, idToken, platform } = await request.json();
 
-    if (!phone || !otp) {
-      return NextResponse.json({ error: 'Phone number and OTP are required' }, { status: 400 });
-    }
+    const requestPlatform = request.headers.get('x-platform') || platform;
 
-    const normalizedPhone = phone.replace(/^\+91/, '').trim();
+    let normalizedPhone = phone ? phone.replace(/^\+91/, '').trim() : '';
 
-    // 1. Look up the OTP record
-    const otpRecord = await prisma.otpVerification.findUnique({
-      where: { phone: normalizedPhone }
-    });
+    if (idToken) {
+      // Firebase ID Token Verification
+      const { getFirebaseAuth } = await import('@/lib/firebase');
+      const auth = getFirebaseAuth(requestPlatform);
+      
+      const decodedToken = await auth.verifyIdToken(idToken);
+      if (!decodedToken.phone_number) {
+        return NextResponse.json({ error: 'No phone number found in token' }, { status: 400 });
+      }
+      
+      normalizedPhone = decodedToken.phone_number.replace(/^\+91/, '').trim();
+    } else {
+      if (!phone || !otp) {
+        return NextResponse.json({ error: 'Phone number and OTP (or idToken) are required' }, { status: 400 });
+      }
 
-    if (!otpRecord) {
-      return NextResponse.json({ error: 'No OTP requested for this number' }, { status: 400 });
-    }
-
-    // 2. Validate Expiry
-    if (otpRecord.expiresAt < new Date()) {
-      await prisma.otpVerification.delete({ where: { phone: normalizedPhone } });
-      return NextResponse.json({ error: 'OTP expired. Please request a new one.' }, { status: 400 });
-    }
-
-    // 3. Validate Attempts
-    if (otpRecord.attempts >= 3) {
-      await prisma.otpVerification.delete({ where: { phone: normalizedPhone } });
-      return NextResponse.json({ error: 'Too many failed attempts. Please request a new OTP.' }, { status: 429 });
-    }
-
-    // 4. Validate OTP match
-    const isValid = await bcrypt.compare(otp.toString(), otpRecord.otpHash);
-    
-    if (!isValid) {
-      await prisma.otpVerification.update({
-        where: { phone: normalizedPhone },
-        data: { attempts: otpRecord.attempts + 1 }
+      // 1. Look up the OTP record
+      const otpRecord = await prisma.otpVerification.findUnique({
+        where: { phone: normalizedPhone }
       });
-      return NextResponse.json({ error: 'Invalid OTP' }, { status: 400 });
-    }
 
-    // 5. Success! Delete the one-time use OTP record
-    await prisma.otpVerification.delete({ where: { phone: normalizedPhone } });
+      if (!otpRecord) {
+        return NextResponse.json({ error: 'No OTP requested for this number' }, { status: 400 });
+      }
+
+      // 2. Validate Expiry
+      if (otpRecord.expiresAt < new Date()) {
+        await prisma.otpVerification.delete({ where: { phone: normalizedPhone } });
+        return NextResponse.json({ error: 'OTP expired. Please request a new one.' }, { status: 400 });
+      }
+
+      // 3. Validate Attempts
+      if (otpRecord.attempts >= 3) {
+        await prisma.otpVerification.delete({ where: { phone: normalizedPhone } });
+        return NextResponse.json({ error: 'Too many failed attempts. Please request a new OTP.' }, { status: 429 });
+      }
+
+      // 4. Validate OTP match
+      const isValid = await bcrypt.compare(otp.toString(), otpRecord.otpHash);
+      
+      if (!isValid) {
+        await prisma.otpVerification.update({
+          where: { phone: normalizedPhone },
+          data: { attempts: otpRecord.attempts + 1 }
+        });
+        return NextResponse.json({ error: 'Invalid OTP' }, { status: 400 });
+      }
+
+      // 5. Success! Delete the one-time use OTP record
+      await prisma.otpVerification.delete({ where: { phone: normalizedPhone } });
+    }
 
     // 6. Identify the User in the Hotel Database
     const phoneSuffix = normalizedPhone.slice(-10);
