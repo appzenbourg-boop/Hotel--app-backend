@@ -1,13 +1,14 @@
-import * as admin from 'firebase-admin';
+import { initializeApp, getApps, getApp, cert } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 
 // Check if default (Android) Firebase app is initialized
-if (!admin.apps.length) {
+if (!getApps().length) {
     try {
-        admin.initializeApp({
-            credential: admin.credential.cert({
-                projectId: process.env.FIREBASE_PROJECT_ID,
-                clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        initializeApp({
+            credential: cert({
+                projectId: process.env.FIREBASE_PROJECT_ID as string,
+                clientEmail: process.env.FIREBASE_CLIENT_EMAIL as string,
+                privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n') as string,
             }),
         });
         console.log('[FIREBASE] Default (Android) app initialized successfully');
@@ -17,16 +18,16 @@ if (!admin.apps.length) {
 }
 
 // Check if iOS Firebase app is initialized
-if (!admin.apps.some((app) => app?.name === 'ios')) {
+if (!getApps().some((app) => app?.name === 'ios')) {
     try {
         if (
             process.env.IOS_FIREBASE_PROJECT_ID &&
             process.env.IOS_FIREBASE_CLIENT_EMAIL &&
             process.env.IOS_FIREBASE_PRIVATE_KEY
         ) {
-            admin.initializeApp(
+            initializeApp(
                 {
-                    credential: admin.credential.cert({
+                    credential: cert({
                         projectId: process.env.IOS_FIREBASE_PROJECT_ID,
                         clientEmail: process.env.IOS_FIREBASE_CLIENT_EMAIL,
                         privateKey: process.env.IOS_FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
@@ -44,17 +45,15 @@ if (!admin.apps.some((app) => app?.name === 'ios')) {
 /**
  * Returns the appropriate Firebase Auth instance based on the platform.
  * @param platform 'ios' | 'android' | undefined
- * @returns admin.auth.Auth
  */
 export const getFirebaseAuth = (platform?: string) => {
     if (platform?.toLowerCase() === 'ios') {
-        const iosApp = admin.apps.find((app) => app?.name === 'ios');
+        const iosApp = getApps().find((app) => app?.name === 'ios');
         if (iosApp) {
-            return iosApp.auth();
+            return getAuth(iosApp);
         }
         console.warn('[FIREBASE] iOS app not initialized, falling back to default');
     }
-    return admin.auth();
+    return getAuth();
 };
 
-export default admin;
