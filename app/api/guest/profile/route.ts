@@ -28,7 +28,7 @@ async function resolveGuest(userId: string) {
           phone: user.phone,
           email: user.email,
           checkInStatus: 'PENDING',
-          referralCode: `${user.name.slice(0, 3).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
+          referralCode: `${(user.name || 'GST').slice(0, 3).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
         }
       });
       await prisma.wallet.upsert({
@@ -108,6 +108,16 @@ export async function PUT(request: Request) {
     return NextResponse.json({ success: true, user: updatedUser });
   } catch (error: any) {
     console.error('Profile update error:', error);
+    
+    // Check if the error is a Prisma Unique Constraint Violation (e.g. Email already taken)
+    if (error.code === 'P2002') {
+      const target = error.meta?.target;
+      if (target && (target.includes('email') || target.includes('phone'))) {
+        return NextResponse.json({ error: 'This email or phone is already in use by another account' }, { status: 400 });
+      }
+      return NextResponse.json({ error: 'A user with this information already exists' }, { status: 400 });
+    }
+
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
   }
 }
